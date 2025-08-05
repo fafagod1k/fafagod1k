@@ -86,7 +86,7 @@ local debugText = ""
 -- Функция обновления информации об игроке
 local function updatePlayer()
     local lastPlayer = currentPlayer
-    currentPlayer = pim.getPlayerName()  -- Получаем имя игрока с PIM
+    currentPlayer = pim.getPlayerName()  -- Исправлено: getPlayerName вместо getpalyername
     
     -- Если игрок изменился, обновляем баланс
     if currentPlayer ~= lastPlayer then
