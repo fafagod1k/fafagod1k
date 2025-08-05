@@ -26,7 +26,7 @@ local BALANCES_PATH = "balances.cfg"
 local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_PRICE = 10 -- Цена по умолчанию для новых предметов
 
--- ASCII логотип магазина
+-- Новый логотип магазина
 local logo = [[
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡐⢆⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -37,6 +37,25 @@ local logo = [[
 ⠀⠀⠀⠀⠀⠀⠀⠀⠒⡄⠁⠀⠀⠁⠀⠰⣡⠂⠀⠈⠸⣑⢋⢆⢳⡘⣔⠣⢆⢠⠱⣊⡕⣎⢖⡱⢎⠞⠁⠀⠈⣎⠱⠀⠀⠀⠈⠲⣡⠢⠄⠀⡜⡡⠂⠐⡥⢊⡴⢡⠎⡤⢁⠆⠀⠘⡀⠎⡐⢂⠰⠀⠆⡀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⢌⡁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+]]
+
+-- Надписи для логотипа
+local logoTop = [[
+███████╗ █████╗ ███████╗ █████╗ ███████╗████████╗ ██████╗ ██████╗ ███████╗
+██╔════╝██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
+█████╗  ███████║█████╗  ███████║███████╗   ██║   ██║   ██║██████╔╝█████╗  
+██╔══╝  ██╔══██║██╔══╝  ██╔══██║╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝  
+██║     ██║  ██║███████╗██║  ██║███████║   ██║   ╚██████╔╝██║  ██║███████╗
+╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+]]
+
+local logoBottom = [[
+███╗   ███╗ ██████╗ ███████╗██╗  ██╗██╗██╗     ██╗     
+████╗ ████║██╔════╝ ██╔════╝██║ ██╔╝██║██║     ██║     
+██╔████╔██║██║  ███╗███████╗█████╔╝ ██║██║     ██║     
+██║╚██╔╝██║██║   ██║╚════██║██╔═██╗ ██║██║     ██║     
+██║ ╚═╝ ██║╚██████╔╝███████║██║  ██╗██║███████╗███████╗
+╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
 ]]
 
 -- Настройки магазина по умолчанию
@@ -202,11 +221,10 @@ local function center(y, text, color)
     gpu.setForeground(defFG)
 end
 
-local function drawButton(x, y, width, height, text, active)
+local function drawButton(x, y, width, height, text, bgColor, fgColor)
     if not text then return end
-    active = active == nil and true or active
-    local bg = active and 0x333333 or 0x111111
-    local fg = active and 0xFFFFFF or 0x888888
+    local bg = bgColor or 0x333333
+    local fg = fgColor or 0xFFFFFF
     
     gpu.setBackground(bg)
     gpu.setForeground(fg)
@@ -221,15 +239,42 @@ end
 
 -- Функция для отображения логотипа
 local function drawLogo()
+    -- Отображение основного логотипа
     local logoLines = {}
     for line in logo:gmatch("[^\n]+") do
         table.insert(logoLines, line)
     end
     
-    local startY = math.floor(h/2) - math.floor(#logoLines/2)
+    local startY = 8
     for i, line in ipairs(logoLines) do
         local x = math.floor((w - unicode.len(line)) / 2)
         gpu.set(x, startY + i - 1, line)
+    end
+    
+    -- Отображение надписи FAFASTORE
+    local topLines = {}
+    for line in logoTop:gmatch("[^\n]+") do
+        table.insert(topLines, line)
+    end
+    
+    local topStartY = 2
+    for i, line in ipairs(topLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x00CED1) -- Бирюзовый
+        gpu.set(x, topStartY + i - 1, line)
+    end
+    
+    -- Отображение надписи mcskill
+    local bottomLines = {}
+    for line in logoBottom:gmatch("[^\n]+") do
+        table.insert(bottomLines, line)
+    end
+    
+    local bottomStartY = topStartY + #topLines + 1
+    for i, line in ipairs(bottomLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x9370DB) -- Фиолетовый
+        gpu.set(x, bottomStartY + i - 1, line)
     end
 end
 
@@ -239,30 +284,29 @@ local function drawMainScreen()
     
     -- Шапка
     gpu.setBackground(0x1155CC)
-    gpu.fill(1, 1, w, 3, " ")
-    center(1, "МАГАЗИН HiTech", 0xFFFFFF)
-    center(2, "Виртуальная валюта: " .. CURRENCY_NAME, 0xFFFF00)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "МАГАЗИН FAFASTORE", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
         gpu.setForeground(0x00FF00)
-        gpu.set(2, 2, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 2, "Баланс: " .. formatNumber(playerBalance))
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
     else
         gpu.setForeground(0xFF0000)
-        gpu.set(2, 2, "Игрок не обнаружен")
+        gpu.set(2, 1, "Игрок не обнаружен")
     end
     
-    -- Кнопки
-    gpu.setBackground(defBG)
-    drawButton(5, 5, 20, 3, "1. Купить предметы")
-    drawButton(30, 5, 25, 3, "2. Продать предметы")
+    -- Отображение логотипа
+    drawLogo()
+    
+    -- Кнопки (по центру экрана)
+    local centerX = math.floor(w/2)
+    drawButton(centerX - 35, 17, 30, 3, "1. Купить предметы", 0x00CED1) -- Бирюзовый
+    drawButton(centerX + 5, 17, 30, 3, "2. Продать предметы", 0x9370DB) -- Фиолетовый
     
     -- Кнопка администрирования в правом нижнем углу
-    drawButton(w - 25, h - 4, 20, 3, "3. Администрирование")
-    
-    -- Отображение логотипа под кнопками
-    drawLogo()
+    drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF) -- Красный
     
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
@@ -274,17 +318,17 @@ local function drawBuyScreen()
     
     -- Шапка
     gpu.setBackground(0x1155CC)
-    gpu.fill(1, 1, w, 3, " ")
+    gpu.fill(1, 1, w, 1, " ")
     center(1, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
         gpu.setForeground(0x00FF00)
-        gpu.set(2, 2, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 2, "Баланс: " .. formatNumber(playerBalance))
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
     else
         gpu.setForeground(0xFF0000)
-        gpu.set(2, 2, "Игрок не обнаружен")
+        gpu.set(2, 1, "Игрок не обнаружен")
     end
     
     gpu.setBackground(defBG)
@@ -302,7 +346,7 @@ local function drawBuyScreen()
         return (infoA.label or "ZZZ") < (infoB.label or "ZZZ")
     end)
     
-    local startY = 5
+    local startY = 3
     local startIdx = (page - 1) * itemsPerPage + 1
     
     for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
@@ -317,7 +361,7 @@ local function drawBuyScreen()
         gpu.set(60, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
         
         -- Кнопка покупки
-        local btnX, btnY, btnX2, btnY2 = drawButton(70, yPos, 8, 1, "Купить")
+        local btnX, btnY, btnX2, btnY2 = drawButton(70, yPos, 8, 1, "Купить", 0x00CED1)
         shopItems[i].button = {btnX, btnY, btnX2, btnY2}
         
         -- Кнопка редактирования (для админа)
@@ -332,7 +376,7 @@ local function drawBuyScreen()
             
             if isAdmin then
                 local btnText = (editingItem == item.key) and "Отмена" or "Изменить"
-                local editBtnX, editBtnY, editBtnX2, editBtnY2 = drawButton(55, yPos, 10, 1, btnText)
+                local editBtnX, editBtnY, editBtnX2, editBtnY2 = drawButton(55, yPos, 10, 1, btnText, 0x9370DB)
                 shopItems[i].editButton = {editBtnX, editBtnY, editBtnX2, editBtnY2}
             end
         end
@@ -340,14 +384,15 @@ local function drawBuyScreen()
     
     -- Навигация
     if page > 1 then
-        drawButton(5, h - 2, 10, 1, "< Назад")
+        drawButton(5, h - 2, 10, 1, "< Назад", 0x1155CC)
     end
     
     if #shopItems > page * itemsPerPage then
-        drawButton(w - 15, h - 2, 10, 1, "Вперед >")
+        drawButton(w - 15, h - 2, 10, 1, "Вперед >", 0x1155CC)
     end
     
-    drawButton(w - 30, h - 2, 15, 1, "Главное меню")
+    -- Кнопка возврата в правом нижнем углу
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
     
     -- Отображение поля ввода для редактирования
     if editingItem then
@@ -366,39 +411,38 @@ local function drawSellScreen()
     
     -- Шапка
     gpu.setBackground(0x1155CC)
-    gpu.fill(1, 1, w, 3, " ")
+    gpu.fill(1, 1, w, 1, " ")
     center(1, "ПРОДАЖА ПРЕДМЕТОВ", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
         gpu.setForeground(0x00FF00)
-        gpu.set(2, 2, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 2, "Баланс: " .. formatNumber(playerBalance))
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
     else
         gpu.setForeground(0xFF0000)
-        gpu.set(2, 2, "Игрок не обнаружен")
+        gpu.set(2, 1, "Игрок не обнаружен")
     end
     
     gpu.setBackground(defBG)
     
     gpu.setForeground(0xFFFF00)
-    center(5, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    center(3, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
     
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
-    center(7, "Положите предметы для продажи в инвентарь", 0xAAAAAA)
-    center(8, "и нажмите 'Продать все'", 0xAAAAAA)
+    center(5, "Положите предметы для продажи в инвентарь", 0xAAAAAA)
+    center(6, "и нажмите 'Продать все'", 0xAAAAAA)
     
     -- Кнопки
-    drawButton(30, 10, 20, 3, "Продать все")
-    drawButton(55, 10, 20, 3, "Сканировать")
-    drawButton(30, 14, 20, 3, "Главное меню")
+    drawButton(30, 8, 20, 3, "Продать все", 0x00CED1) -- Бирюзовый
+    drawButton(55, 8, 20, 3, "Сканировать", 0x9370DB) -- Фиолетовый
     
     -- Список покупаемых предметов
     gpu.setForeground(0x00FF00)
-    gpu.set(5, 17, "Магазин покупает:")
+    gpu.set(5, 12, "Магазин покупает:")
     
-    local yPos = 19
+    local yPos = 14
     for itemKey, price in pairs(config.sellItems) do
         local itemInfo = getItemInfo(itemKey)
         
@@ -408,7 +452,11 @@ local function drawSellScreen()
         gpu.set(40, yPos, "Цена: " .. formatNumber(price) .. " " .. CURRENCY_NAME .. " за шт.")
         
         yPos = yPos + 1
+        if yPos > h - 3 then break end
     end
+    
+    -- Кнопка возврата в правом нижнем углу
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
 local function drawAdminPanel()
@@ -416,43 +464,43 @@ local function drawAdminPanel()
     
     -- Шапка
     gpu.setBackground(0x1155CC)
-    gpu.fill(1, 1, w, 3, " ")
+    gpu.fill(1, 1, w, 1, " ")
     center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
         gpu.setForeground(0x00FF00)
-        gpu.set(2, 2, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 2, "Баланс: " .. formatNumber(playerBalance))
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
     else
         gpu.setForeground(0xFF0000)
-        gpu.set(2, 2, "Игрок не обнаружен")
+        gpu.set(2, 1, "Игрок не обнаружен")
     end
     
     gpu.setBackground(defBG)
     
     gpu.setForeground(0xFF00FF)
-    center(5, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
+    center(3, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
     
     -- Кнопки
-    drawButton(5, 8, 25, 3, "Добавить для продажи")
-    drawButton(35, 8, 30, 3, "Добавить для покупки")
+    drawButton(5, 5, 25, 3, "Добавить для продажи", 0x00CED1) -- Бирюзовый
+    drawButton(35, 5, 30, 3, "Добавить для покупки", 0x9370DB) -- Фиолетовый
     
     -- Дополнительные функции
-    drawButton(5, 12, 20, 3, "Сканировать ME")
-    drawButton(30, 12, 25, 3, "Сохранить конфиг")
+    drawButton(5, 9, 20, 3, "Сканировать ME", 0x1155CC)
+    drawButton(30, 9, 25, 3, "Сохранить конфиг", 0x1155CC)
     
     -- Статистика
     gpu.setForeground(0x00FF00)
-    gpu.set(5, 16, "Статистика магазина:")
+    gpu.set(5, 13, "Статистика магазина:")
     
     gpu.setForeground(0xFFFFFF)
-    gpu.set(5, 18, "Предметов для продажи: " .. table_size(config.items or {}))
-    gpu.set(5, 19, "Предметов для покупки: " .. table_size(config.sellItems or {}))
-    gpu.set(5, 20, "Последнее сканирование: " .. os.date("%H:%M:%S", lastScanTime))
+    gpu.set(5, 15, "Предметов для продажи: " .. table_size(config.items or {}))
+    gpu.set(5, 16, "Предметов для покупки: " .. table_size(config.sellItems or {}))
+    gpu.set(5, 17, "Последнее сканирование: " .. os.date("%H:%M:%S", lastScanTime))
     
     -- Кнопка возврата в правом нижнем углу
-    drawButton(w - 20, h - 4, 15, 3, "На главную")
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
     
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
@@ -634,18 +682,21 @@ local function handleEvent(eventName, ...)
         
         -- Главный экран
         if state == "MAIN" then
-            if y >= 5 and y <= 7 then
-                if x >= 5 and x <= 25 then
+            local centerX = math.floor(w/2)
+            -- Кнопка покупки
+            if y >= 17 and y <= 19 then
+                if x >= centerX - 35 and x <= centerX - 5 then
                     state = "BUY"
                     drawBuyScreen()
-                elseif x >= 30 and x <= 55 then
+                -- Кнопка продажи
+                elseif x >= centerX + 5 and x <= centerX + 35 then
                     state = "SELL"
                     drawSellScreen()
                 end
             end
             
             -- Кнопка администрирования в правом нижнем углу
-            if y >= h - 4 and y <= h - 1 and x >= w - 25 and x <= w - 5 then
+            if y == h and x >= w - 15 and x <= w then
                 state = "ADMIN"
                 drawAdminPanel()
             end
@@ -689,17 +740,20 @@ local function handleEvent(eventName, ...)
                 elseif x >= w - 15 and x <= w - 5 and #shopItems > page * itemsPerPage then
                     page = page + 1
                     drawBuyScreen()
-                elseif x >= w - 30 and x <= w - 15 then
-                    state = "MAIN"
-                    editingItem = nil
-                    drawMainScreen()
                 end
+            end
+            
+            -- Кнопка возврата в правом нижнем углу
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                editingItem = nil
+                drawMainScreen()
             end
         end
         
         -- Экран продажи
         if state == "SELL" then
-            if y >= 10 and y <= 13 then
+            if y >= 8 and y <= 10 then
                 if x >= 30 and x <= 50 then
                     sellItems()
                     os.sleep(1)
@@ -709,7 +763,10 @@ local function handleEvent(eventName, ...)
                     sellItems()
                     drawSellScreen()
                 end
-            elseif y >= 14 and y <= 17 and x >= 30 and x <= 50 then
+            end
+            
+            -- Кнопка возврата в правом нижнем углу
+            if y == h and x >= w - 10 and x <= w then
                 state = "MAIN"
                 drawMainScreen()
             end
@@ -717,7 +774,7 @@ local function handleEvent(eventName, ...)
         
         -- Админ-панель
         if state == "ADMIN" then
-            if y >= 8 and y <= 11 then
+            if y >= 5 and y <= 7 then
                 if x >= 5 and x <= 30 then
                     addItemToConfig(false) -- Добавить для продажи
                 elseif x >= 35 and x <= 65 then
@@ -726,7 +783,7 @@ local function handleEvent(eventName, ...)
             end
             
             -- Дополнительные функции
-            if y >= 12 and y <= 15 then
+            if y >= 9 and y <= 11 then
                 if x >= 5 and x <= 25 then
                     -- Сканирование ME системы
                     center(h - 1, "Сканирование ME...", 0xFFFF00)
@@ -744,7 +801,7 @@ local function handleEvent(eventName, ...)
             end
             
             -- Кнопка возврата в правом нижнем углу
-            if y >= h - 4 and y <= h - 1 and x >= w - 20 and x <= w - 5 then
+            if y == h and x >= w - 10 and x <= w then
                 state = "MAIN"
                 drawMainScreen()
             end
@@ -830,7 +887,7 @@ local function main()
     drawLogo()
     
     -- Сообщение о загрузке
-    center(h - 5, "Инициализация магазина HiTech...", 0xFFFF00)
+    center(h - 5, "Инициализация магазина FAFASTORE...", 0xFFFF00)
     center(h - 4, "Сканирование ME системы...", 0xFFFF00)
     
     local addedCount, newConfig = scanMEForItems(config)
