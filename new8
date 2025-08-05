@@ -23,7 +23,7 @@ gpu.setResolution(w, h)
 local CURRENCY_NAME = "Эмы"
 local SHOP_CONFIG_PATH = "shop_config.cfg"
 local BALANCES_PATH = "balances.cfg"
-local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
+local ADMIN_USERS = {"ВашНик"} -- Замените на ваш ник
 local DEFAULT_PRICE = 10 -- Цена по умолчанию для новых предметов
 
 -- Настройки магазина по умолчанию
@@ -68,6 +68,7 @@ end
 
 -- Вспомогательная функция для подсчета размера таблицы
 local function table_size(t)
+    if not t then return 0 end
     local count = 0
     for _ in pairs(t) do count = count + 1 end
     return count
@@ -97,9 +98,15 @@ local function scanMEForItems(config)
     return addedCount, config
 end
 
--- Получение информации о предмете
+-- Получение информации о предмете с кэшированием
+local itemInfoCache = {}
 local function getItemInfo(itemKey)
     if not itemKey then return {label = "Неизвестный предмет", name = "unknown", damage = 0} end
+    
+    -- Используем кэш, чтобы не запрашивать информацию многократно
+    if itemInfoCache[itemKey] then
+        return itemInfoCache[itemKey]
+    end
     
     local parts = {}
     for part in itemKey:gmatch("[^:]+") do
@@ -107,7 +114,8 @@ local function getItemInfo(itemKey)
     end
     
     if #parts < 2 then
-        return {label = "Неизвестный предмет", name = "unknown", damage = 0}
+        itemInfoCache[itemKey] = {label = "Неизвестный предмет", name = "unknown", damage = 0}
+        return itemInfoCache[itemKey]
     end
     
     local itemID = parts[1]
@@ -115,10 +123,19 @@ local function getItemInfo(itemKey)
     
     local success, itemInfo = pcall(me.getItemDetail, {name = itemID, damage = itemDmg})
     if success and itemInfo then
+        itemInfo.label = itemInfo.label or itemID
+        itemInfoCache[itemKey] = itemInfo
         return itemInfo
     end
     
-    return {label = "Неизвестный предмет", name = itemID, damage = itemDmg}
+    -- Если не удалось получить информацию, создаем базовую
+    itemInfoCache[itemKey] = {
+        label = itemID:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        name = itemID,
+        damage = itemDmg
+    }
+    
+    return itemInfoCache[itemKey]
 end
 
 -- Переменные состояния
@@ -132,6 +149,7 @@ local page = 1
 local itemsPerPage = 8
 local editingItem = nil -- Редактируемый предмет
 local priceBuffer = "" -- Буфер для ввода цены
+local lastScanTime = 0
 
 -- Глобальные настройки GPU
 local defBG, defFG = 0x000000, 0xFFFFFF
@@ -195,7 +213,7 @@ local function drawMainScreen()
     -- Шапка
     gpu.setBackground(0x1155CC)
     gpu.fill(1, 1, w, 3, " ")
-    center(1, "МАГАЗИН fafastore", 0xFFFFFF)
+    center(1, "МАГАЗИН HiTech", 0xFFFFFF)
     center(2, "Виртуальная валюта: " .. CURRENCY_NAME, 0xFFFF00)
     
     -- Информация о игроке
@@ -237,7 +255,7 @@ local function drawBuyScreen()
     table.sort(shopItems, function(a, b) 
         local infoA = getItemInfo(a.key)
         local infoB = getItemInfo(b.key)
-        return infoA.label < infoB.label
+        return (infoA.label or "ZZZ") < (infoB.label or "ZZZ")
     end)
     
     local startY = 8
@@ -272,17 +290,19 @@ local function drawBuyScreen()
                 local btnText = (editingItem == item.key) and "Отмена" or "Изменить"
                 local editBtnX, editBtnY, editBtnX2, editBtnY2 = drawButton(55, yPos, 10, 1, btnText)
                 shopItems[i].editButton = {editBtnX, editBtnY, editBtnX2, editBtnY2}
-                
-                if editingItem == item.key then
-                    -- Поле ввода для изменения цены
-                    gpu.setBackground(0x333333)
-                    gpu.setForeground(0xFFFFFF)
-                    gpu.fill(30, yPos, 20, 1, " ")
-                    gpu.set(30, yPos, "Цена: " .. priceBuffer)
-                    gpu.setBackground(defBG)
-                end
             end
         end
+    end
+    
+    -- Отображение поля ввода для редактирования
+    if editingItem then
+        gpu.setBackground(0x333333)
+        gpu.setForeground(0xFFFFFF)
+        gpu.fill(30, h - 2, 20, 1, " ")
+        gpu.set(30, h - 2, "Цена: " .. priceBuffer)
+        gpu.setBackground(defBG)
+        
+        center(h - 1, "Введите новую цену и нажмите Enter", 0xFFFF00)
     end
     
     -- Навигация
@@ -295,11 +315,6 @@ local function drawBuyScreen()
     end
     
     drawButton(w - 30, h - 2, 15, 1, "Главное меню")
-    
-    -- Статус редактирования
-    if editingItem then
-        center(h - 1, "Введите новую цену и нажмите Enter", 0xFFFF00)
-    end
 end
 
 local function drawSellScreen()
@@ -351,7 +366,7 @@ local function drawAdminPanel()
     
     -- Дополнительные функции
     drawButton(5, 12, 20, 3, "Сканировать ME")
-    drawButton(30, 12, 25, 3, "Экспорт конфига")
+    drawButton(30, 12, 25, 3, "Сохранить конфиг")
     
     -- Статистика
     gpu.setForeground(0x00FF00)
@@ -360,6 +375,7 @@ local function drawAdminPanel()
     gpu.setForeground(0xFFFFFF)
     gpu.set(5, 18, "Предметов для продажи: " .. table_size(config.items or {}))
     gpu.set(5, 19, "Предметов для покупки: " .. table_size(config.sellItems or {}))
+    gpu.set(5, 20, "Последнее сканирование: " .. os.date("%H:%M:%S", lastScanTime))
     
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
@@ -631,10 +647,11 @@ local function handleEvent(eventName, ...)
                     local addedCount, newConfig = scanMEForItems(config)
                     if newConfig then config = newConfig end
                     saveConfig(config)
+                    lastScanTime = os.time()
                     center(h - 1, "Добавлено " .. addedCount .. " новых предметов", 0x00FF00)
                     drawAdminPanel()
                 elseif x >= 30 and x <= 55 then
-                    -- Экспорт конфига
+                    -- Сохранение конфига
                     saveConfig(config)
                     center(h - 1, "Конфиг успешно сохранен", 0x00FF00)
                 end
@@ -686,11 +703,11 @@ local function handleEvent(eventName, ...)
                         config.items[editingItem] = price
                         saveConfig(config)
                         center(h - 1, "Цена обновлена!", 0x00FF00)
+                        editingItem = nil
+                        drawBuyScreen()
                     else
                         center(h - 1, "Некорректная цена!", 0xFF0000)
                     end
-                    editingItem = nil
-                    drawBuyScreen()
                 elseif char == 8 then -- Backspace
                     priceBuffer = priceBuffer:sub(1, -2)
                     drawBuyScreen()
@@ -717,6 +734,7 @@ local function main()
     local addedCount, newConfig = scanMEForItems(config)
     if newConfig then config = newConfig end
     saveConfig(config)
+    lastScanTime = os.time()
     
     -- Загрузка обновленного конфига
     config = loadConfig()
