@@ -274,10 +274,10 @@ local function drawGoodbyeScreen()
             "       █       "
         }
     
-    local startY = math.floor(h/2) - 5
+    local startY = math.floor(h/2) - 3
     for i, line in ipairs(heart) do
         local x = math.floor((w - unicode.len(line)) / 2)
-        gpu.setForeground(0xFFC0CB) -- Красный
+        gpu.setForeground(0xFF69B4) -- Красный
         gpu.set(x, startY + i, line)
     end
     
