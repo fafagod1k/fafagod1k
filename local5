@@ -32,8 +32,8 @@ local logoTop = [[
 ██╔════╝██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
 █████╗  ███████║█████╗  ███████║███████╗   ██║   ██║   ██║██████╔╝█████╗  
 ██╔══╝  ██╔══██║██╔══╝  ██╔══██║╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝  
-██║     ██║  ██║██      ██║  ██║███████║   ██║   ╚██████╔╝██║  ██║███████╗
-╚═╝     ╚═╝  ╚═╝╚═      ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+██║     ██║  ██║██║     ██║  ██║███████║   ██║   ╚██████╔╝██║  ██║███████╗
+╚═╝     ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
 ]]
 
 local logoBottom = [[
@@ -41,7 +41,7 @@ local logoBottom = [[
 ████╗ ████║██╔════╝ ██╔════╝██║ ██╔╝██║██║     ██║     
 ██╔████╔██║██║      ███████╗█████╔╝ ██║██║     ██║     
 ██║╚██╔╝██║██║      ╚════██║██╔═██╗ ██║██║     ██║     
-██║ ╚═╝ ██║╚██████╔╝███████║██║  ██╗██║███████╗███████╗
+██║ ╚═╝ ██║╚██████╗ ███████║██║  ██╗██║███████╗███████╗
 ╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
 ]]
 
@@ -224,7 +224,7 @@ local function drawButton(x, y, width, height, text, bgColor, fgColor)
     return x, y, x + width - 1, y + height - 1
 end
 
--- Функция для отображения логотипа
+-- Функция для отображения логотипа (с опущенными логотипами)
 local function drawLogo()
     -- Отображение надписи FAFASTORE
     local topLines = {}
@@ -232,10 +232,11 @@ local function drawLogo()
         table.insert(topLines, line)
     end
     
-    local topStartY = 2
+    -- Опускаем логотип ниже (было 2, теперь 4)
+    local topStartY = 4
     for i, line in ipairs(topLines) do
         local x = math.floor((w - unicode.len(line)) / 2)
-        gpu.setForeground(0x00CED1) -- Бирюзовый
+        gpu.setForeground(0x1E90FF) -- Синий (DodgerBlue)
         gpu.set(x, topStartY + i - 1, line)
     end
     
@@ -245,7 +246,7 @@ local function drawLogo()
         table.insert(bottomLines, line)
     end
     
-    local bottomStartY = topStartY + #topLines + 1
+    local bottomStartY = topStartY + #topLines
     for i, line in ipairs(bottomLines) do
         local x = math.floor((w - unicode.len(line)) / 2)
         gpu.setForeground(0x9370DB) -- Фиолетовый
@@ -274,13 +275,13 @@ local function drawMainScreen()
         gpu.set(2, 1, "Игрок не обнаружен")
     end
     
-    -- Отображение логотипа
+    -- Отображение логотипа (теперь ниже)
     drawLogo()
     
-    -- Кнопки (по центру экрана)
+    -- Кнопки (по центру экрана, опущены ниже)
     local centerX = math.floor(w/2)
-    drawButton(centerX - 35, 15, 30, 3, "1. Купить предметы", 0x00CED1) -- Бирюзовый
-    drawButton(centerX + 5, 15, 30, 3, "2. Продать предметы", 0x9370DB) -- Фиолетовый
+    drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0x00CED1) -- Бирюзовый
+    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0x9370DB) -- Фиолетовый
     
     -- Кнопка администрирования в правом нижнем углу
     drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF) -- Красный
@@ -661,7 +662,7 @@ local function handleEvent(eventName, ...)
         if state == "MAIN" then
             local centerX = math.floor(w/2)
             -- Кнопка покупки
-            if y >= 15 and y <= 17 then
+            if y >= 16 and y <= 18 then
                 if x >= centerX - 35 and x <= centerX - 5 then
                     state = "BUY"
                     drawBuyScreen()
