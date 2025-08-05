@@ -1,0 +1,561 @@
+local unicode = require("unicode")
+local computer = require("computer")
+local com = require("component")
+local event = require("event")
+local fs = require("filesystem")
+local shell = require("shell")
+local serialization = require("serialization")
+local inspect = {}
+if not fs.exists("/lib/inspect.lua") then
+    shell.execute("wget -q https://raw.githubusercontent.com/kikito/inspect.lua/master/inspect.lua /lib/inspect.lua")
+end
+inspect = require("inspect")
+
+-- Компоненты
+local me = com.isAvailable("me_interface") and com.me_interface or error("ME интерфейс не подключен")
+local pim = com.isAvailable("pim") and com.pim or error("PIM не подключен")
+local gpu = com.gpu
+
+-- Установка разрешения 160x50
+local w, h = 160, 50
+gpu.setResolution(w, h)
+local defBG, defFG = gpu.getBackground(), gpu.getForeground()
+
+-- Константы
+local CURRENCY_NAME = "Эмы"
+local SHOP_CONFIG_PATH = "shop_config.cfg"
+local BALANCES_PATH = "balances.cfg"
+local ADMIN_USERS = {"ВашНик"} -- Замените на ваш ник
+
+-- Настройки магазина по умолчанию
+local shopConfig = {
+    items = {},
+    sellItems = {},
+    defaultPrice = 10,
+    scanned = false
+}
+
+-- Загрузка/сохранение конфигурации
+local function loadConfig()
+    if fs.exists(SHOP_CONFIG_PATH) then
+        local file = io.open(SHOP_CONFIG_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        return serialization.unserialize(data) or shopConfig
+    end
+    return shopConfig
+end
+
+local function saveConfig(config)
+    local file = io.open(SHOP_CONFIG_PATH, "w")
+    file:write(serialization.serialize(config))
+    file:close()
+end
+
+-- Балансы игроков
+local function loadBalances()
+    if fs.exists(BALANCES_PATH) then
+        local file = io.open(BALANCES_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        return serialization.unserialize(data) or {}
+    end
+    return {}
+end
+
+local function saveBalances(balances)
+    local file = io.open(BALANCES_PATH, "w")
+    file:write(serialization.serialize(balances))
+    file:close()
+end
+
+-- Переменные состояния
+local currentPlayer = nil
+local playerBalance = 0
+local balances = loadBalances()
+local config = loadConfig()
+local shopItems = {}
+local state = "MAIN" -- MAIN, BUY, SELL, ADMIN, SCANNING
+local page = 1
+local itemsPerPage = 20
+local scanProgress = 0
+local totalItems = 0
+local activeButtons = {}
+local debugText = ""
+
+-- Утилиты
+local function formatNumber(num)
+    local formattedNum = tostring(math.floor(num))
+    return formattedNum
+end
+
+local function center(y, text, color)
+    color = color or 0xFFFFFF
+    gpu.setForeground(color)
+    local x = math.floor((w - unicode.len(text)) / 2)
+    gpu.set(x, y, text)
+    gpu.setForeground(defFG)
+end
+
+local function drawButton(x, y, width, height, text, bgColor, fgColor, action)
+    bgColor = bgColor or 0x333333
+    fgColor = fgColor or 0xFFFFFF
+    gpu.setBackground(bgColor)
+    gpu.setForeground(fgColor)
+    
+    -- Рисуем прямоугольник кнопки
+    for i = y, y + height - 1 do
+        gpu.fill(x, i, width, 1, " ")
+    end
+    
+    -- Размещаем текст по центру кнопки
+    local textX = x + math.floor((width - unicode.len(text)) / 2)
+    local textY = y + math.floor(height / 2)
+    gpu.set(textX, textY, text)
+    
+    gpu.setBackground(defBG)
+    gpu.setForeground(defFG)
+    
+    -- Сохраняем кнопку для обработки нажатий
+    table.insert(activeButtons, {
+        x1 = x, 
+        y1 = y, 
+        x2 = x + width - 1, 
+        y2 = y + height - 1,
+        action = action
+    })
+    
+    -- Добавляем отладочную информацию о кнопке
+    debugText = debugText .. string.format("Button: %s [%d-%d, %d-%d]\n", action, x, x+width-1, y, y+height-1)
+end
+
+-- Функция отрисовки экрана сканирования
+local function drawScanScreen()
+    gpu.fill(1, 1, w, h, " ")
+    center(10, "СКАНИРОВАНИЕ ВСЕХ ПРЕДМЕТОВ В МЭ СИСТЕМЕ", 0xFFFF00)
+    center(12, "Это может занять несколько минут...", 0xAAAAAA)
+    
+    -- Прогресс бар
+    local barWidth = w - 20
+    local progressWidth = math.floor(barWidth * scanProgress / 100)
+    gpu.setBackground(0x333333)
+    gpu.fill(10, 15, barWidth, 1, " ")
+    gpu.setBackground(0x00AA00)
+    if progressWidth > 0 then
+        gpu.fill(10, 15, progressWidth, 1, " ")
+    end
+    
+    -- Текст прогресса
+    center(17, string.format("Прогресс: %d%% (%d/%d)", scanProgress, math.floor(scanProgress * totalItems / 100), totalItems), 0x00FF00)
+    
+    -- Предупреждение
+    gpu.setForeground(0xFF5555)
+    center(h - 5, "НЕ ПРЕРЫВАЙТЕ ПРОЦЕСС! ЭТО МОЖЕТ ПОВРЕДИТЬ СИСТЕМУ!", 0xFF5555)
+end
+
+-- Отрисовка интерфейса
+local function drawMainScreen()
+    activeButtons = {}
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x1155CC)
+    gpu.fill(1, 1, w, 3, " ")
+    center(1, "МАГАЗИН HITECH MCskill", 0xFFFFFF)
+    center(2, "Виртуальная валюта: " .. CURRENCY_NAME, 0xFFFF00)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(5, 2, "Игрок: " .. currentPlayer)
+        gpu.set(w - 40, 2, "Баланс: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(5, 2, "Игрок не обнаружен")
+    end
+    
+    -- Кнопки (крупные для основных действий, маленькая для администрирования)
+    gpu.setBackground(defBG)
+    drawButton(30, 10, 100, 5, "КУПИТЬ ПРЕДМЕТЫ", 0x3333FF, 0xFFFFFF, "BUY")
+    drawButton(30, 20, 100, 5, "ПРОДАТЬ ПРЕДМЕТЫ", 0x33CC33, 0xFFFFFF, "SELL")
+    drawButton(60, 35, 40, 3, "Администрирование", 0xCC3333, 0xFFFFFF, "ADMIN")
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h - 1, "Стоя на PIM, используйте ЛКМ для взаимодействия")
+    
+    -- Статус сканирования
+    if config.scanned then
+        gpu.setForeground(0x00FF00)
+        gpu.set(w - 50, 2, "Предметов в системе: " .. formatNumber(totalItems))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(w - 50, 2, "Сканирование не выполнено!")
+    end
+end
+
+local function drawBuyScreen()
+    activeButtons = {}
+    gpu.fill(1, 5, w, h - 5, " ")
+    
+    -- Заголовок
+    center(5, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFF00)
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 6, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Список товаров
+    shopItems = {}
+    for itemKey, price in pairs(config.items) do
+        table.insert(shopItems, {key = itemKey, price = price})
+    end
+    
+    local startY = 8
+    local startIdx = (page - 1) * itemsPerPage + 1
+    
+    for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
+        local item = shopItems[i]
+        local parts = {}
+        for part in item.key:gmatch("[^:]+") do
+            table.insert(parts, part)
+        end
+        
+        local itemName = "Неизвестный предмет"
+        local itemQty = 0
+        local success, itemInfo = pcall(me.getItemDetail, {id = parts[1], dmg = tonumber(parts[2])})
+        if success and itemInfo then
+            itemName = itemInfo.label
+            itemQty = itemInfo.qty
+        end
+        
+        local yPos = startY + (i - startIdx) * 2
+        
+        -- Отображение предмета
+        gpu.setForeground(0xFFFFFF)
+        gpu.set(5, yPos, itemName)
+        gpu.setForeground(0x00FF00)
+        gpu.set(100, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
+        gpu.setForeground(0xAAAAAA)
+        gpu.set(70, yPos, "В наличии: " .. formatNumber(itemQty))
+        
+        -- Кнопка покупки (крупная)
+        local btnColor = playerBalance >= item.price and 0x3333FF or 0x888888
+        drawButton(130, yPos, 25, 2, "КУПИТЬ", btnColor, 0xFFFFFF, "BUY_"..i)
+    end
+    
+    -- Навигация (крупные кнопки)
+    if page > 1 then
+        drawButton(10, h - 5, 20, 3, "< НАЗАД", 0x555555, 0xFFFFFF, "PREV_PAGE")
+    end
+    
+    if #shopItems > page * itemsPerPage then
+        drawButton(w - 30, h - 5, 20, 3, "ВПЕРЕД >", 0x555555, 0xFFFFFF, "NEXT_PAGE")
+    end
+    
+    drawButton(w - 60, h - 5, 30, 3, "ГЛАВНОЕ МЕНЮ", 0xCC3333, 0xFFFFFF, "MAIN_MENU")
+end
+
+local function drawSellScreen()
+    activeButtons = {}
+    gpu.fill(1, 5, w, h - 5, " ")
+    
+    -- Заголовок
+    center(5, "ПРОДАЖА ПРЕДМЕТОВ", 0xFFFF00)
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 6, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    center(8, "Положите предметы для продажи в инвентарь", 0xAAAAAA)
+    center(9, "и нажмите 'Продать все'", 0xAAAAAA)
+    
+    -- Крупные кнопки
+    drawButton(50, 12, 40, 5, "ПРОДАТЬ ВСЕ", 0x33CC33, 0xFFFFFF, "SELL_ALL")
+    drawButton(100, 12, 40, 5, "СКАНИРОВАТЬ", 0x5555FF, 0xFFFFFF, "SCAN_INV")
+    drawButton(75, 20, 40, 5, "ГЛАВНОЕ МЕНЮ", 0xCC3333, 0xFFFFFF, "MAIN_MENU")
+end
+
+local function drawAdminPanel()
+    activeButtons = {}
+    gpu.fill(1, 5, w, h - 5, " ")
+    
+    -- Заголовок
+    center(5, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFF00FF)
+    
+    -- Крупные кнопки
+    drawButton(30, 8, 100, 5, "СКАНИРОВАТЬ ВСЕ ПРЕДМЕТЫ", 0x228822, 0xFFFFFF, "SCAN_ALL")
+    drawButton(30, 16, 100, 5, "ИЗМЕНИТЬ ЦЕНУ", 0x3333FF, 0xFFFFFF, "CHANGE_PRICE")
+    drawButton(60, 30, 40, 3, "ВЫХОД", 0xAA2222, 0xFFFFFF, "EXIT_ADMIN")
+end
+
+-- Сканирование всех предметов в ME системе
+local function scanAllItems()
+    state = "SCANNING"
+    drawScanScreen()
+    
+    -- Получаем все предметы из ME сети
+    local items = me.getItemsInNetwork()
+    totalItems = #items
+    config.items = {}
+    
+    for i, item in ipairs(items) do
+        scanProgress = math.floor(i / totalItems * 100)
+        local itemKey = string.format("%s:%d", item.name, item.damage)
+        
+        if not config.items[itemKey] then
+            config.items[itemKey] = config.defaultPrice
+        end
+        
+        if i % 10 == 0 then
+            drawScanScreen()
+            os.sleep(0.01)
+        end
+    end
+    
+    config.scanned = true
+    saveConfig(config)
+    state = "MAIN"
+    drawMainScreen()
+    return true
+end
+
+-- Логика магазина
+local function buyItem(itemKey, price)
+    if not currentPlayer then
+        center(25, "Игрок не обнаружен!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    if playerBalance < price then
+        center(25, "Недостаточно средств!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    local parts = {}
+    for part in itemKey:gmatch("[^:]+") do
+        table.insert(parts, part)
+    end
+    
+    local itemID = parts[1]
+    local itemDmg = tonumber(parts[2])
+    
+    -- Проверка наличия в ME
+    local itemDetail = me.getItemDetail({id = itemID, dmg = itemDmg})
+    if not itemDetail or itemDetail.qty < 1 then
+        center(25, "Товара нет в наличии!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    -- Выдача предмета
+    local success = me.exportItem({id = itemID, dmg = itemDmg}, "UP", 1)
+    if success and success.size > 0 then
+        playerBalance = playerBalance - price
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        center(25, "Покупка успешна!", 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(25, "Ошибка выдачи предмета!", 0xFF0000)
+    computer.beep(1000, 0.5)
+    return false
+end
+
+local function sellItems()
+    if not currentPlayer then
+        center(25, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local totalEarned = 0
+    local itemsSold = 0
+    local inventory = pim.getAllStacks(0)
+    
+    for slot, item in pairs(inventory) do
+        if item then
+            local itemKey = item.id .. ":" .. item.dmg
+            local sellPrice = config.sellItems[itemKey]
+            
+            if sellPrice then
+                local amountToSell = item.qty
+                local earned = amountToSell * sellPrice
+                
+                -- Изъятие предметов у игрока
+                pim.pushItem("DOWN", slot, amountToSell)
+                
+                -- Начисление средств
+                playerBalance = playerBalance + earned
+                totalEarned = totalEarned + earned
+                itemsSold = itemsSold + amountToSell
+            end
+        end
+    end
+    
+    if itemsSold > 0 then
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        center(25, string.format("Продано %d предметов на сумму %d %s", 
+               itemsSold, totalEarned, CURRENCY_NAME), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(25, "Нет предметов для продажи!", 0xFFFF00)
+    return false
+end
+
+-- Обработка событий
+local function handleEvent(eventName, ...)
+    local args = {...}
+    
+    if eventName == "interrupted" then
+        gpu.setBackground(defBG)
+        gpu.setForeground(defFG)
+        gpu.fill(1, 1, w, h, " ")
+        os.exit()
+        return true
+    end
+    
+    -- Вход/выход игрока
+    if eventName == "player_on" then
+        currentPlayer = args[1]
+        playerBalance = balances[currentPlayer] or 0
+        state = "MAIN"
+        drawMainScreen()
+        return
+    elseif eventName == "player_off" then
+        currentPlayer = nil
+        playerBalance = 0
+        state = "MAIN"
+        drawMainScreen()
+        return
+    end
+    
+    -- Обработка мыши
+    if eventName == "touch" or eventName == "drag" then
+        local _, _, x, y, button = ...
+        
+        -- Только левая кнопка мыши
+        if button ~= 0 then return end
+        
+        -- Отладочная информация
+        debugText = string.format("Click: %d,%d State: %s", x, y, state)
+        gpu.setBackground(0x000000)
+        gpu.setForeground(0xFFFFFF)
+        gpu.fill(1, h, w, 1, " ")
+        gpu.set(1, h, debugText)
+        gpu.setBackground(defBG)
+        
+        computer.beep(1500, 0.1) -- Звук при клике
+        
+        -- Проверка всех активных кнопок
+        for _, btn in ipairs(activeButtons) do
+            if x >= btn.x1 and x <= btn.x2 and y >= btn.y1 and y <= btn.y2 then
+                debugText = debugText .. " | Button: " .. btn.action
+                gpu.fill(1, h, w, 1, " ")
+                gpu.set(1, h, debugText)
+                
+                -- Главный экран
+                if state == "MAIN" then
+                    if btn.action == "BUY" then
+                        state = "BUY"
+                        page = 1
+                        drawBuyScreen()
+                    elseif btn.action == "SELL" then
+                        state = "SELL"
+                        drawSellScreen()
+                    elseif btn.action == "ADMIN" then
+                        state = "ADMIN"
+                        drawAdminPanel()
+                    end
+                
+                -- Экран покупки
+                elseif state == "BUY" then
+                    if btn.action == "PREV_PAGE" and page > 1 then
+                        page = page - 1
+                        drawBuyScreen()
+                    elseif btn.action == "NEXT_PAGE" and #shopItems > page * itemsPerPage then
+                        page = page + 1
+                        drawBuyScreen()
+                    elseif btn.action == "MAIN_MENU" then
+                        state = "MAIN"
+                        drawMainScreen()
+                    elseif btn.action:sub(1,4) == "BUY_" then
+                        local index = tonumber(btn.action:sub(5))
+                        if index then
+                            buyItem(shopItems[index].key, shopItems[index].price)
+                            os.sleep(0.5)
+                            drawBuyScreen()
+                        end
+                    end
+                
+                -- Экран продажи
+                elseif state == "SELL" then
+                    if btn.action == "SELL_ALL" then
+                        sellItems()
+                        os.sleep(1)
+                    elseif btn.action == "SCAN_INV" then
+                        center(25, "Сканирование...", 0xFFFF00)
+                        sellItems()
+                        os.sleep(1)
+                        drawSellScreen()
+                    elseif btn.action == "MAIN_MENU" then
+                        state = "MAIN"
+                        drawMainScreen()
+                    end
+                
+                -- Админ-панель
+                elseif state == "ADMIN" then
+                    if btn.action == "SCAN_ALL" then
+                        scanAllItems()
+                    elseif btn.action == "CHANGE_PRICE" then
+                        center(20, "Функция в разработке", 0xFFFF00)
+                        os.sleep(2)
+                        drawAdminPanel()
+                    elseif btn.action == "EXIT_ADMIN" then
+                        state = "MAIN"
+                        drawMainScreen()
+                    end
+                end
+                
+                break
+            end
+        end
+    end
+end
+
+-- Основной цикл
+local function main()
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Первоначальное сканирование
+    if not config.scanned then
+        center(10, "ПЕРВОНАЧАЛЬНАЯ НАСТРОЙКА МАГАЗИНА", 0xFFFF00)
+        center(12, "Сканируем все предметы в ME системе...", 0x00FF00)
+        os.sleep(2)
+        scanAllItems()
+    else
+        -- Загружаем количество предметов
+        local items = me.getItemsInNetwork()
+        totalItems = #items
+        drawMainScreen()
+    end
+    
+    while true do
+        if state == "SCANNING" then
+            drawScanScreen()
+            os.sleep(0.1)
+        else
+            local e = {event.pull(0.1, "touch", "drag", "player_on", "player_off", "interrupted")}
+            if e[1] then
+                handleEvent(table.unpack(e))
+            end
+        end
+    end
+end
+
+-- Запуск программы
+main()
