@@ -262,17 +262,22 @@ local function drawGoodbyeScreen()
     gpu.fill(1, 1, w, h, " ")
     
     -- Красное сердечко
-   local heart = {
-        " ▄▀▀▀▀▀▀▀▀▄  ",
-        "▐▓▓▓▓▓▓▓▓▓▓▌ ",
-        "▐▓▓▓▓▓▓▓▓▓▓▌ ",
-        " ▀████████▀  "
-    }
+    local heart = {
+            "    ██    ██    ",
+            "   ████  ████   ",
+            "  ███████████  ",
+            "  ███████████  ",
+            "   █████████   ",
+            "    ███████    ",
+            "     █████     ",
+            "      ███      ",
+            "       █       "
+        }
     
     local startY = math.floor(h/2) - 5
     for i, line in ipairs(heart) do
         local x = math.floor((w - unicode.len(line)) / 2)
-        gpu.setForeground(0xFF0000) -- Красный
+        gpu.setForeground(0xFFC0CB) -- Красный
         gpu.set(x, startY + i, line)
     end
     
