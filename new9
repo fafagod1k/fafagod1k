@@ -23,7 +23,7 @@ gpu.setResolution(w, h)
 local CURRENCY_NAME = "Эмы"
 local SHOP_CONFIG_PATH = "shop_config.cfg"
 local BALANCES_PATH = "balances.cfg"
-local ADMIN_USERS = {"ВашНик"} -- Замените на ваш ник
+local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_PRICE = 10 -- Цена по умолчанию для новых предметов
 
 -- Настройки магазина по умолчанию
