@@ -284,7 +284,7 @@ local function drawMainScreen()
     drawButton(centerX + 5, 16, 30, 3, "2. Пополнить баланс", 0xF5DEB3, 0x000000) -- Светло-бежевый
     
     -- Авторы магазина (по центру под кнопками)
-    center(20, "Авторы магазина: fafagod1k, Shenzy, Griffinov", 0xAAAAAA)
+    center(20, "Авторы магазина: fafagod1k, Shenzy, Griffinov.", 0xAAAAAA)
     
     -- Кнопка администрирования в правом нижнем углу
     drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF) -- Красный
@@ -657,8 +657,8 @@ local function handleEvent(eventName, ...)
         drawMainScreen()
     end
     
-    -- Обработка касаний
-    if eventName == "touch" then
+    -- Обработка касаний - ТОЛЬКО если игрок стоит на PIM
+    if eventName == "touch" and currentPlayer then
         local _, x, y, button = ...
         
         -- Главный экран
@@ -789,8 +789,8 @@ local function handleEvent(eventName, ...)
         end
     end
     
-    -- Обработка клавиатуры
-    if eventName == "key_down" then
+    -- Обработка клавиатуры - ТОЛЬКО если игрок стоит на PIM
+    if eventName == "key_down" and currentPlayer then
         local _, char, code = ...
         
         -- Быстрые клавиши в главном меню
