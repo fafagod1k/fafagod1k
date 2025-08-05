@@ -71,8 +71,10 @@ local function scanMEForItems()
     local addedCount = 0
     
     for _, item in ipairs(itemsInME) do
-        if item and item.label then
-            local key = item.id .. ":" .. item.dmg
+        if item and item.name and item.label then
+            -- Используем безопасное получение dmg
+            local dmg = item.dmg or 0
+            local key = item.name .. ":" .. dmg
             
             -- Добавляем только новые предметы
             if not config.items[key] then
@@ -83,6 +85,28 @@ local function scanMEForItems()
     end
     
     return addedCount
+end
+
+-- Получение информации о предмете
+local function getItemInfo(itemKey)
+    local parts = {}
+    for part in itemKey:gmatch("[^:]+") do
+        table.insert(parts, part)
+    end
+    
+    if #parts < 2 then
+        return {label = "Неизвестный предмет", name = "unknown", dmg = 0}
+    end
+    
+    local itemID = parts[1]
+    local itemDmg = tonumber(parts[2]) or 0
+    
+    local success, itemInfo = pcall(me.getItemDetail, {name = itemID, damage = itemDmg})
+    if success and itemInfo then
+        return itemInfo
+    end
+    
+    return {label = "Неизвестный предмет", name = itemID, damage = itemDmg}
 end
 
 -- Переменные состояния
@@ -105,6 +129,10 @@ gpu.fill(1, 1, w, h, " ")
 
 -- Утилиты
 local function formatNumber(num)
+    if num < 1000 then
+        return tostring(math.floor(num))
+    end
+    
     local symbols = {"", "K", "M", "B", "T"}
     local formattedNum = num
     local symbolIndex = 1
@@ -115,12 +143,10 @@ local function formatNumber(num)
     end
 
     if symbolIndex > 1 then
-        formattedNum = string.format("%.1f%s", formattedNum, symbols[symbolIndex])
-    else
-        formattedNum = tostring(math.floor(formattedNum))
+        return string.format("%.1f%s", formattedNum, symbols[symbolIndex])
     end
 
-    return formattedNum
+    return tostring(math.floor(formattedNum))
 end
 
 local function center(y, text, color)
@@ -139,7 +165,9 @@ local function drawButton(x, y, width, height, text, active)
     gpu.setBackground(bg)
     gpu.setForeground(fg)
     gpu.fill(x, y, width, height, " ")
-    gpu.set(x + math.floor((width - unicode.len(text)) / 2), y + math.floor(height/2), text)
+    local textX = x + math.floor((width - unicode.len(text)) / 2)
+    local textY = y + math.floor(height/2)
+    gpu.set(textX, textY, text)
     gpu.setBackground(defBG)
     gpu.setForeground(defFG)
     return x, y, x + width - 1, y + height - 1
@@ -186,23 +214,15 @@ local function drawBuyScreen()
     
     -- Список товаров
     shopItems = {}
-    local idx = 1
     for itemKey, price in pairs(config.items) do
-        shopItems[idx] = {key = itemKey, price = price}
-        idx = idx + 1
+        table.insert(shopItems, {key = itemKey, price = price})
     end
     
+    -- Сортировка по названию
     table.sort(shopItems, function(a, b) 
-        local nameA = a.key
-        local nameB = b.key
-        
-        local successA, itemInfoA = pcall(me.getItemDetail, {id = a.key:match("([^:]+)"), dmg = tonumber(a.key:match(":(%d+)$"))})
-        local successB, itemInfoB = pcall(me.getItemDetail, {id = b.key:match("([^:]+)"), dmg = tonumber(b.key:match(":(%d+)$"))})
-        
-        if successA and itemInfoA and successB and itemInfoB then
-            return itemInfoA.label < itemInfoB.label
-        end
-        return a.key < b.key
+        local infoA = getItemInfo(a.key)
+        local infoB = getItemInfo(b.key)
+        return infoA.label < infoB.label
     end)
     
     local startY = 8
@@ -210,22 +230,12 @@ local function drawBuyScreen()
     
     for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
         local item = shopItems[i]
-        local parts = {}
-        for part in item.key:gmatch("[^:]+") do
-            table.insert(parts, part)
-        end
-        
-        local itemName = "Неизвестный предмет"
-        local success, itemInfo = pcall(me.getItemDetail, {id = parts[1], dmg = tonumber(parts[3])})
-        if success and itemInfo then
-            itemName = itemInfo.label
-        end
-        
+        local itemInfo = getItemInfo(item.key)
         local yPos = startY + (i - startIdx) * 2
         
         -- Отображение предмета
         gpu.setForeground(0xFFFFFF)
-        gpu.set(3, yPos, itemName)
+        gpu.set(3, yPos, itemInfo.label)
         gpu.setForeground(0x00FF00)
         gpu.set(60, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
         
@@ -234,7 +244,7 @@ local function drawBuyScreen()
         shopItems[i].button = {btnX, btnY, btnX2, btnY2}
         
         -- Кнопка редактирования (для админа)
-        if currentPlayer and editingItem ~= item.key then
+        if currentPlayer then
             local isAdmin = false
             for _, admin in ipairs(ADMIN_USERS) do
                 if admin == currentPlayer then
@@ -244,16 +254,19 @@ local function drawBuyScreen()
             end
             
             if isAdmin then
-                local editBtnX, editBtnY, editBtnX2, editBtnY2 = drawButton(55, yPos, 10, 1, "Изменить")
+                local btnText = (editingItem == item.key) and "Отмена" or "Изменить"
+                local editBtnX, editBtnY, editBtnX2, editBtnY2 = drawButton(55, yPos, 10, 1, btnText)
                 shopItems[i].editButton = {editBtnX, editBtnY, editBtnX2, editBtnY2}
+                
+                if editingItem == item.key then
+                    -- Поле ввода для изменения цены
+                    gpu.setBackground(0x333333)
+                    gpu.setForeground(0xFFFFFF)
+                    gpu.fill(30, yPos, 20, 1, " ")
+                    gpu.set(30, yPos, "Цена: " .. priceBuffer)
+                    gpu.setBackground(defBG)
+                end
             end
-        elseif editingItem == item.key then
-            -- Поле ввода для изменения цены
-            gpu.setBackground(0x333333)
-            gpu.setForeground(0xFFFFFF)
-            gpu.fill(55, yPos, 15, 1, " ")
-            gpu.set(55, yPos, "Цена: " .. priceBuffer)
-            gpu.setBackground(defBG)
         end
     end
     
@@ -267,6 +280,11 @@ local function drawBuyScreen()
     end
     
     drawButton(w - 30, h - 2, 15, 1, "Главное меню")
+    
+    -- Статус редактирования
+    if editingItem then
+        center(h - 1, "Введите новую цену и нажмите Enter", 0xFFFF00)
+    end
 end
 
 local function drawSellScreen()
@@ -293,19 +311,10 @@ local function drawSellScreen()
     
     local yPos = 21
     for itemKey, price in pairs(config.sellItems) do
-        local parts = {}
-        for part in itemKey:gmatch("[^:]+") do
-            table.insert(parts, part)
-        end
-        
-        local itemName = "Неизвестный предмет"
-        local success, itemInfo = pcall(me.getItemDetail, {id = parts[1], dmg = tonumber(parts[3])})
-        if success and itemInfo then
-            itemName = itemInfo.label
-        end
+        local itemInfo = getItemInfo(itemKey)
         
         gpu.setForeground(0xFFFFFF)
-        gpu.set(5, yPos, "- " .. itemName)
+        gpu.set(5, yPos, "- " .. itemInfo.label)
         gpu.setForeground(0xFFFF00)
         gpu.set(40, yPos, "Цена: " .. formatNumber(price) .. " " .. CURRENCY_NAME .. " за шт.")
         
@@ -329,13 +338,13 @@ local function drawAdminPanel()
     drawButton(5, 12, 20, 3, "Сканировать ME")
     drawButton(30, 12, 25, 3, "Экспорт конфига")
     
-    -- Текущие настройки
+    -- Статистика
     gpu.setForeground(0x00FF00)
-    gpu.set(5, 16, "Текущие настройки магазина:")
+    gpu.set(5, 16, "Статистика магазина:")
     
     gpu.setForeground(0xFFFFFF)
-    gpu.set(5, 18, "Предметы для продажи игрокам: " .. table_size(config.items))
-    gpu.set(5, 19, "Предметы для покупки у игроков: " .. table_size(config.sellItems))
+    gpu.set(5, 18, "Предметов для продажи: " .. #shopItems)
+    gpu.set(5, 19, "Предметов для покупки: " .. table_size(config.sellItems))
     
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
@@ -355,16 +364,10 @@ local function buyItem(itemKey, price)
         return false
     end
     
-    local parts = {}
-    for part in itemKey:gmatch("[^:]+") do
-        table.insert(parts, part)
-    end
-    
-    local itemID = parts[1]
-    local itemDmg = tonumber(parts[3])
+    local itemInfo = getItemInfo(itemKey)
     
     -- Проверка наличия в ME
-    local itemDetail = me.getItemDetail({id = itemID, dmg = itemDmg})
+    local itemDetail = me.getItemDetail({name = itemInfo.name, damage = itemInfo.damage})
     if not itemDetail or itemDetail.qty < 1 then
         center(h - 1, "Товара нет в наличии!", 0xFF0000)
         computer.beep(1000, 0.5)
@@ -372,12 +375,12 @@ local function buyItem(itemKey, price)
     end
     
     -- Выдача предмета
-    local success = me.exportItem({id = itemID, dmg = itemDmg}, "UP", 1)
+    local success = me.exportItem({name = itemInfo.name, damage = itemInfo.damage}, "UP", 1)
     if success and success.size > 0 then
         playerBalance = playerBalance - price
         balances[currentPlayer] = playerBalance
         saveBalances(balances)
-        center(h - 1, "Покупка успешна!", 0x00FF00)
+        center(h - 1, "Покупка успешна: " .. itemInfo.label, 0x00FF00)
         computer.beep(2000, 0.2)
         return true
     end
@@ -404,7 +407,9 @@ local function sellItems()
     
     for slot, item in pairs(inventory) do
         if item then
-            local itemKey = item.id .. ":" .. item.dmg
+            -- Безопасное получение dmg
+            local dmg = item.dmg or 0
+            local itemKey = item.id .. ":" .. dmg
             local sellPrice = config.sellItems[itemKey]
             
             if sellPrice then
@@ -462,22 +467,20 @@ local function addItemToConfig(isSellItem)
         return
     end
     
-    local itemKey = item.id .. ":" .. item.dmg
+    -- Безопасное получение dmg
+    local dmg = item.dmg or 0
+    local itemKey = item.id .. ":" .. dmg
     local price = 10 -- Цена по умолчанию
     
-    -- Получаем информацию о предмете из ME
-    local itemName = "Неизвестный предмет"
-    local success, itemInfo = pcall(me.getItemDetail, {id = item.id, dmg = item.dmg})
-    if success and itemInfo then
-        itemName = itemInfo.label
-    end
+    -- Получаем информацию о предмете
+    local itemInfo = getItemInfo(itemKey)
     
     if isSellItem then
         config.sellItems[itemKey] = price
-        center(h - 1, "Предмет добавлен для покупки у игроков: " .. itemName, 0x00FF00)
+        center(h - 1, "Предмет добавлен для покупки: " .. itemInfo.label, 0x00FF00)
     else
         config.items[itemKey] = price
-        center(h - 1, "Предмет добавлен для продажи игрокам: " .. itemName, 0x00FF00)
+        center(h - 1, "Предмет добавлен для продажи: " .. itemInfo.label, 0x00FF00)
     end
     
     saveConfig(config)
@@ -531,6 +534,7 @@ local function handleEvent(eventName, ...)
         -- Экран покупки
         if state == "BUY" then
             for i, item in ipairs(shopItems) do
+                -- Кнопка покупки
                 if item.button then
                     local btn = item.button
                     if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
@@ -541,12 +545,16 @@ local function handleEvent(eventName, ...)
                     end
                 end
                 
-                -- Редактирование цены
-                if item.editButton and editingItem ~= item.key then
+                -- Кнопка редактирования
+                if item.editButton then
                     local btn = item.editButton
                     if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
-                        editingItem = item.key
-                        priceBuffer = tostring(item.price)
+                        if editingItem == item.key then
+                            editingItem = nil
+                        else
+                            editingItem = item.key
+                            priceBuffer = tostring(item.price)
+                        end
                         drawBuyScreen()
                         break
                     end
@@ -563,6 +571,7 @@ local function handleEvent(eventName, ...)
                     drawBuyScreen()
                 elseif x >= w - 30 and x <= w - 15 then
                     state = "MAIN"
+                    editingItem = nil
                     drawMainScreen()
                 end
             end
@@ -610,7 +619,8 @@ local function handleEvent(eventName, ...)
                     drawAdminPanel()
                 elseif x >= 30 and x <= 55 then
                     -- Экспорт конфига
-                    center(h - 1, "Конфиг экспортирован в /shop_config.cfg", 0x00FF00)
+                    saveConfig(config)
+                    center(h - 1, "Конфиг успешно сохранен", 0x00FF00)
                 end
             end
         end
@@ -638,6 +648,7 @@ local function handleEvent(eventName, ...)
         if state == "BUY" then
             if char == 27 then -- ESC
                 state = "MAIN"
+                editingItem = nil
                 drawMainScreen()
             elseif char == 97 or code == 30 then -- A/Left
                 if page > 1 then
@@ -677,9 +688,17 @@ local function handleEvent(eventName, ...)
         -- Возврат в главное меню
         if char == 113 or code == 16 then -- Q
             state = "MAIN"
+            editingItem = nil
             drawMainScreen()
         end
     end
+end
+
+-- Вспомогательная функция для подсчета размера таблицы
+function table_size(t)
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+    return count
 end
 
 -- Основной цикл
@@ -688,6 +707,9 @@ local function main()
     center(math.floor(h/2), "Сканирование ME системы...", 0xFFFF00)
     local addedCount = scanMEForItems()
     saveConfig(config)
+    
+    -- Загрузка обновленного конфига
+    config = loadConfig()
     
     drawMainScreen()
     
