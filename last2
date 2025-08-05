@@ -282,7 +282,7 @@ local function drawMainScreen()
     local centerX = math.floor(w/2)
     -- Светло-бежевые кнопки с темным текстом
     drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0xF5DEB3, 0x000000) -- Светло-бежевый
-    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0xF5DEB3, 0x000000) -- Светло-бежевый
+    drawButton(centerX + 5, 16, 30, 3, "2. Пополнить баланс", 0xF5DEB3, 0x000000) -- Светло-бежевый
     
     -- Авторы магазина (по центру под кнопками)
     center(20, "Авторы магазина: fafagod1k, Shenzy, Griffinov", 0xAAAAAA)
