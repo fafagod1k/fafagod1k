@@ -263,7 +263,6 @@ local function drawMainScreen()
     -- Шапка (фиксированная высота)
     gpu.setBackground(0x000000) -- Черный фон вместо синего
     gpu.fill(1, 1, w, 1, " ")  -- Только одна строка
-    center(1, "МАГАЗИН FAFASTORE", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
