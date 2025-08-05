@@ -5,11 +5,12 @@ local event = require("event")
 local fs = require("filesystem")
 local shell = require("shell")
 local serialization = require("serialization")
-local inspect = {}
+
+-- Загрузка inspect.lua
 if not fs.exists("/lib/inspect.lua") then
     shell.execute("wget -q https://raw.githubusercontent.com/kikito/inspect.lua/master/inspect.lua /lib/inspect.lua")
 end
-inspect = require("inspect")
+local inspect = require("inspect")
 
 -- Компоненты
 local me = com.isAvailable("me_interface") and com.me_interface or error("ME интерфейс не подключен")
@@ -26,7 +27,7 @@ local ADMIN_USERS = {"ВашНик"} -- Замените на ваш ник
 local DEFAULT_PRICE = 10 -- Цена по умолчанию для новых предметов
 
 -- Настройки магазина по умолчанию
-local shopConfig = {
+local defaultConfig = {
     items = {},
     sellItems = {}
 }
@@ -37,9 +38,9 @@ local function loadConfig()
         local file = io.open(SHOP_CONFIG_PATH, "r")
         local data = file:read("*a")
         file:close()
-        return serialization.unserialize(data) or shopConfig
+        return serialization.unserialize(data) or defaultConfig
     end
-    return shopConfig
+    return defaultConfig
 end
 
 local function saveConfig(config)
@@ -65,8 +66,17 @@ local function saveBalances(balances)
     file:close()
 end
 
+-- Вспомогательная функция для подсчета размера таблицы
+local function table_size(t)
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+    return count
+end
+
 -- Сканирование ME системы для добавления предметов
-local function scanMEForItems()
+local function scanMEForItems(config)
+    if not config then config = defaultConfig end
+    
     local itemsInME = me.getItemsInNetwork()
     local addedCount = 0
     
@@ -84,18 +94,20 @@ local function scanMEForItems()
         end
     end
     
-    return addedCount
+    return addedCount, config
 end
 
 -- Получение информации о предмете
 local function getItemInfo(itemKey)
+    if not itemKey then return {label = "Неизвестный предмет", name = "unknown", damage = 0} end
+    
     local parts = {}
     for part in itemKey:gmatch("[^:]+") do
         table.insert(parts, part)
     end
     
     if #parts < 2 then
-        return {label = "Неизвестный предмет", name = "unknown", dmg = 0}
+        return {label = "Неизвестный предмет", name = "unknown", damage = 0}
     end
     
     local itemID = parts[1]
@@ -110,10 +122,10 @@ local function getItemInfo(itemKey)
 end
 
 -- Переменные состояния
+local config = loadConfig()
+local balances = loadBalances()
 local currentPlayer = nil
 local playerBalance = 0
-local balances = loadBalances()
-local config = loadConfig()
 local shopItems = {}
 local state = "MAIN" -- MAIN, BUY, SELL, ADMIN
 local page = 1
@@ -129,6 +141,7 @@ gpu.fill(1, 1, w, h, " ")
 
 -- Утилиты
 local function formatNumber(num)
+    if not num then return "0" end
     if num < 1000 then
         return tostring(math.floor(num))
     end
@@ -150,6 +163,7 @@ local function formatNumber(num)
 end
 
 local function center(y, text, color)
+    if not text then return end
     color = color or defFG
     gpu.setForeground(color)
     local x = math.floor((w - unicode.len(text)) / 2)
@@ -158,6 +172,7 @@ local function center(y, text, color)
 end
 
 local function drawButton(x, y, width, height, text, active)
+    if not text then return end
     active = active == nil and true or active
     local bg = active and 0x333333 or 0x111111
     local fg = active and 0xFFFFFF or 0x888888
@@ -235,7 +250,7 @@ local function drawBuyScreen()
         
         -- Отображение предмета
         gpu.setForeground(0xFFFFFF)
-        gpu.set(3, yPos, itemInfo.label)
+        gpu.set(3, yPos, itemInfo.label or "Неизвестный предмет")
         gpu.setForeground(0x00FF00)
         gpu.set(60, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
         
@@ -314,7 +329,7 @@ local function drawSellScreen()
         local itemInfo = getItemInfo(itemKey)
         
         gpu.setForeground(0xFFFFFF)
-        gpu.set(5, yPos, "- " .. itemInfo.label)
+        gpu.set(5, yPos, "- " .. (itemInfo.label or "Неизвестный предмет"))
         gpu.setForeground(0xFFFF00)
         gpu.set(40, yPos, "Цена: " .. formatNumber(price) .. " " .. CURRENCY_NAME .. " за шт.")
         
@@ -343,8 +358,8 @@ local function drawAdminPanel()
     gpu.set(5, 16, "Статистика магазина:")
     
     gpu.setForeground(0xFFFFFF)
-    gpu.set(5, 18, "Предметов для продажи: " .. #shopItems)
-    gpu.set(5, 19, "Предметов для покупки: " .. table_size(config.sellItems))
+    gpu.set(5, 18, "Предметов для продажи: " .. table_size(config.items or {}))
+    gpu.set(5, 19, "Предметов для покупки: " .. table_size(config.sellItems or {}))
     
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
@@ -380,7 +395,7 @@ local function buyItem(itemKey, price)
         playerBalance = playerBalance - price
         balances[currentPlayer] = playerBalance
         saveBalances(balances)
-        center(h - 1, "Покупка успешна: " .. itemInfo.label, 0x00FF00)
+        center(h - 1, "Покупка успешна: " .. (itemInfo.label or "предмет"), 0x00FF00)
         computer.beep(2000, 0.2)
         return true
     end
@@ -477,10 +492,10 @@ local function addItemToConfig(isSellItem)
     
     if isSellItem then
         config.sellItems[itemKey] = price
-        center(h - 1, "Предмет добавлен для покупки: " .. itemInfo.label, 0x00FF00)
+        center(h - 1, "Предмет добавлен для покупки: " .. (itemInfo.label or "предмет"), 0x00FF00)
     else
         config.items[itemKey] = price
-        center(h - 1, "Предмет добавлен для продажи: " .. itemInfo.label, 0x00FF00)
+        center(h - 1, "Предмет добавлен для продажи: " .. (itemInfo.label or "предмет"), 0x00FF00)
     end
     
     saveConfig(config)
@@ -613,7 +628,8 @@ local function handleEvent(eventName, ...)
                 if x >= 5 and x <= 25 then
                     -- Сканирование ME системы
                     center(h - 1, "Сканирование ME...", 0xFFFF00)
-                    local addedCount = scanMEForItems()
+                    local addedCount, newConfig = scanMEForItems(config)
+                    if newConfig then config = newConfig end
                     saveConfig(config)
                     center(h - 1, "Добавлено " .. addedCount .. " новых предметов", 0x00FF00)
                     drawAdminPanel()
@@ -694,18 +710,12 @@ local function handleEvent(eventName, ...)
     end
 end
 
--- Вспомогательная функция для подсчета размера таблицы
-function table_size(t)
-    local count = 0
-    for _ in pairs(t) do count = count + 1 end
-    return count
-end
-
 -- Основной цикл
 local function main()
     -- Первоначальное сканирование ME системы
     center(math.floor(h/2), "Сканирование ME системы...", 0xFFFF00)
-    local addedCount = scanMEForItems()
+    local addedCount, newConfig = scanMEForItems(config)
+    if newConfig then config = newConfig end
     saveConfig(config)
     
     -- Загрузка обновленного конфига
