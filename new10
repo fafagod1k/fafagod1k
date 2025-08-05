@@ -23,7 +23,7 @@ gpu.setResolution(w, h)
 local CURRENCY_NAME = "Эмы"
 local SHOP_CONFIG_PATH = "shop_config.cfg"
 local BALANCES_PATH = "balances.cfg"
-local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
+local ADMIN_USERS = {"ВашНик"} -- Замените на ваш ник
 local DEFAULT_PRICE = 10 -- Цена по умолчанию для новых предметов
 
 -- Настройки магазина по умолчанию
@@ -294,17 +294,6 @@ local function drawBuyScreen()
         end
     end
     
-    -- Отображение поля ввода для редактирования
-    if editingItem then
-        gpu.setBackground(0x333333)
-        gpu.setForeground(0xFFFFFF)
-        gpu.fill(30, h - 2, 20, 1, " ")
-        gpu.set(30, h - 2, "Цена: " .. priceBuffer)
-        gpu.setBackground(defBG)
-        
-        center(h - 1, "Введите новую цену и нажмите Enter", 0xFFFF00)
-    end
-    
     -- Навигация
     if page > 1 then
         drawButton(5, h - 2, 10, 1, "< Назад")
@@ -315,6 +304,17 @@ local function drawBuyScreen()
     end
     
     drawButton(w - 30, h - 2, 15, 1, "Главное меню")
+    
+    -- Отображение поля ввода для редактирования
+    if editingItem then
+        gpu.setBackground(0x333333)
+        gpu.setForeground(0xFFFFFF)
+        gpu.fill(30, h - 2, 20, 1, " ")
+        gpu.set(30, h - 2, "Цена: " .. priceBuffer)
+        gpu.setBackground(defBG)
+        
+        center(h - 1, "Введите новую цену и нажмите Enter", 0xFFFF00)
+    end
 end
 
 local function drawSellScreen()
@@ -492,9 +492,18 @@ local function addItemToConfig(isSellItem)
     end
     
     -- Получаем предмет в руке
-    local item = pim.getStackInSlot(0)
-    if not item then
-        center(h - 1, "Возьмите предмет в руку!", 0xFF0000)
+    -- PIM требует специального подхода для получения предмета из руки
+    local item = nil
+    local inventory = pim.getAllStacks(0)
+    for slot, stack in pairs(inventory) do
+        if stack and stack.id and slot == 0 then  -- Слот 0 обычно соответствует руке
+            item = stack
+            break
+        end
+    end
+    
+    if not item or not item.id then
+        center(h - 1, "Возьмите предмет в руку и попробуйте снова!", 0xFF0000)
         return
     end
     
