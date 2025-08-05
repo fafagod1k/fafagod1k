@@ -83,6 +83,23 @@ local totalItems = 0
 local activeButtons = {}
 local debugText = ""
 
+-- Функция обновления информации об игроке
+local function updatePlayer()
+    local lastPlayer = currentPlayer
+    currentPlayer = pim.getPlayerName()  -- Получаем имя игрока с PIM
+    
+    -- Если игрок изменился, обновляем баланс
+    if currentPlayer ~= lastPlayer then
+        if currentPlayer then
+            playerBalance = balances[currentPlayer] or 0
+        else
+            playerBalance = 0
+        end
+        return true  -- Игрок изменился
+    end
+    return false  -- Игрок не менялся
+end
+
 -- Утилиты
 local function formatNumber(num)
     local formattedNum = tostring(math.floor(num))
@@ -407,19 +424,6 @@ local function sellItems()
     return false
 end
 
- -- Вход/выход игрока
-    if eventName == "player_on" then
-        currentPlayer = args[1]
-        playerBalance = balances[currentPlayer] or 0
-        state = "MAIN"
-        drawMainScreen()
-    elseif eventName == "player_off" then
-        currentPlayer = nil
-        playerBalance = 0
-        state = "MAIN"
-        drawMainScreen()
-    end
-
 -- Обработка событий
 local function handleEvent(eventName, ...)
     local args = {...}
@@ -430,6 +434,19 @@ local function handleEvent(eventName, ...)
         gpu.fill(1, 1, w, h, " ")
         os.exit()
         return true
+    end
+    
+    -- Вход/выход игрока
+    if eventName == "player_on" then
+        currentPlayer = args[1]
+        playerBalance = balances[currentPlayer] or 0
+        state = "MAIN"
+        drawMainScreen()
+    elseif eventName == "player_off" then
+        currentPlayer = nil
+        playerBalance = 0
+        state = "MAIN"
+        drawMainScreen()
     end
     
     -- Обновляем состояние игрока при любом событии
@@ -559,7 +576,7 @@ local function main()
             drawScanScreen()
             os.sleep(0.1)
         else
-            local e = {event.pull(0.1, "touch", "drag", "interrupted")}
+            local e = {event.pull(0.1, "touch", "drag", "interrupted", "player_on", "player_off")}
             if e[1] then
                 handleEvent(table.unpack(e))
             end
