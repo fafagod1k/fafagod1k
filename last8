@@ -257,12 +257,12 @@ local function drawLogo()
     gpu.setForeground(defFG)
 end
 
--- Отрисовка экрана прощания
+ -- Отрисовка экрана прощания
 local function drawGoodbyeScreen()
     gpu.fill(1, 1, w, h, " ")
     
-    -- Красное сердечко
-    local heart = {
+    -- Улучшенное сердечко с более округлыми формами
+  local heart = {
             "    ██    ██    ",
             "   ████  ████   ",
             "  ███████████  ",
@@ -274,21 +274,26 @@ local function drawGoodbyeScreen()
             "       █       "
         }
     
-    local startY = math.floor(h/2) - 3
+    -- Расположение сердечка выше текста
+    local heartHeight = #heart
+    local startY = math.floor(h/2) - heartHeight - 3
+    
+    -- Рисуем сердечко
     for i, line in ipairs(heart) do
         local x = math.floor((w - unicode.len(line)) / 2)
-        gpu.setForeground(0xFF69B4) -- Красный
+        gpu.setForeground(0xFF69B4) -- Ярко-розовый
         gpu.set(x, startY + i, line)
     end
     
-    -- Сообщение
+    -- Сообщение (ниже сердечка)
     gpu.setForeground(0xFFFFFF)
-    center(startY + 6, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
+    center(startY + heartHeight + 2, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
     
-    -- Таймер
+    -- Таймер (еще ниже)
     local remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
-    center(startY + 8, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
+    center(startY + heartHeight + 4, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
 end
+
 
 -- Отрисовка интерфейса
 local function drawMainScreen()
