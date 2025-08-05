@@ -921,19 +921,13 @@ local function main()
     while true do
         local e = {event.pull(0.5)} -- Ожидаем события с таймаутом 0.5 сек
         
-        -- Проверка присутствия игрока
+        -- Проверка присутствия игрока (исправленная версия)
         if currentPlayer and state ~= "GOODBYE" then
-            local players = pim.getPlayers()
-            local found = false
-            for _, player in ipairs(players) do
-                if player == currentPlayer then
-                    found = true
-                    break
-                end
-            end
+            -- Получаем имя текущего инвентаря на PIM
+            local invName = pim.getInventoryName()
             
-            if not found then
-                -- Переключаемся на экран прощания
+            -- Если имя не совпадает с текущим игроком, значит игрок ушел
+            if invName ~= currentPlayer then
                 state = "GOODBYE"
                 goodbyeTimer = computer.uptime()
                 drawGoodbyeScreen()
