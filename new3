@@ -22,7 +22,7 @@ gpu.setResolution(w, h)
 local CURRENCY_NAME = "Эмы"
 local SHOP_CONFIG_PATH = "shop_config.cfg"
 local BALANCES_PATH = "balances.cfg"
-local ADMIN_USERS = {"ВашНик"} -- Замените на ваш ник
+local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 
 -- Настройки магазина по умолчанию
 local shopConfig = {
@@ -140,7 +140,7 @@ local function drawMainScreen()
     -- Шапка
     gpu.setBackground(0x1155CC)
     gpu.fill(1, 1, w, 3, " ")
-    center(1, "МАГАЗИН HiTech", 0xFFFFFF)
+    center(1, "МАГАЗИН fafastore", 0xFFFFFF)
     center(2, "Виртуальная валюта: " .. CURRENCY_NAME, 0xFFFF00)
     
     -- Информация о игроке
