@@ -407,26 +407,18 @@ local function sellItems()
     return false
 end
 
--- Обновление состояния игрока
-local function updatePlayer()
-    local players = pim.getPlayers()
-    if #players > 0 then
-        -- Берем первого игрока (обычно на PIM может быть только один)
-        local newPlayer = players[1]
-        if currentPlayer ~= newPlayer then
-            currentPlayer = newPlayer
-            playerBalance = balances[currentPlayer] or 0
-            return true
-        end
-    else
-        if currentPlayer then
-            currentPlayer = nil
-            playerBalance = 0
-            return true
-        end
+ -- Вход/выход игрока
+    if eventName == "player_on" then
+        currentPlayer = args[1]
+        playerBalance = balances[currentPlayer] or 0
+        state = "MAIN"
+        drawMainScreen()
+    elseif eventName == "player_off" then
+        currentPlayer = nil
+        playerBalance = 0
+        state = "MAIN"
+        drawMainScreen()
     end
-    return false
-end
 
 -- Обработка событий
 local function handleEvent(eventName, ...)
