@@ -261,7 +261,7 @@ local function drawMainScreen()
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка (фиксированная высота)
-    gpu.setBackground(0x1155CC)
+    gpu.setBackground(0x000000) -- Черный фон вместо синего
     gpu.fill(1, 1, w, 1, " ")  -- Только одна строка
     center(1, "МАГАЗИН FAFASTORE", 0xFFFFFF)
     
@@ -280,8 +280,9 @@ local function drawMainScreen()
     
     -- Кнопки (по центру экрана, опущены ниже)
     local centerX = math.floor(w/2)
-    drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0x00CED1) -- Бирюзовый
-    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0x9370DB) -- Фиолетовый
+    -- Светло-бежевые кнопки с темным текстом
+    drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0xF5DEB3, 0x000000) -- Светло-бежевый
+    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0xF5DEB3, 0x000000) -- Светло-бежевый
     
     -- Кнопка администрирования в правом нижнем углу
     drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF) -- Красный
@@ -295,7 +296,7 @@ local function drawBuyScreen()
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка (фиксированная высота)
-    gpu.setBackground(0x1155CC)
+    gpu.setBackground(0x000000) -- Черный фон вместо синего
     gpu.fill(1, 1, w, 1, " ")  -- Только одна строка
     center(1, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFFFF)
     
@@ -388,7 +389,7 @@ local function drawSellScreen()
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка (фиксированная высота)
-    gpu.setBackground(0x1155CC)
+    gpu.setBackground(0x000000) -- Черный фон вместо синего
     gpu.fill(1, 1, w, 1, " ")  -- Только одна строка
     center(1, "ПРОДАЖА ПРЕДМЕТОВ", 0xFFFFFF)
     
@@ -441,7 +442,7 @@ local function drawAdminPanel()
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка (фиксированная высота)
-    gpu.setBackground(0x1155CC)
+    gpu.setBackground(0x000000) -- Черный фон вместо синего
     gpu.fill(1, 1, w, 1, " ")  -- Только одна строка
     center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
     
