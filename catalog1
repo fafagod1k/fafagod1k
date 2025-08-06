@@ -1,0 +1,1732 @@
+local unicode = require("unicode")
+local computer = require("computer")
+local com = require("component")
+local event = require("event")
+local fs = require("filesystem")
+local shell = require("shell")
+local serialization = require("serialization")
+
+-- Загрузка inspect.lua
+if not fs.exists("/lib/inspect.lua") then
+    shell.execute("wget -q https://raw.githubusercontent.com/kikito/inspect.lua/master/inspect.lua /lib/inspect.lua")
+end
+local inspect = require("inspect")
+
+-- Компоненты
+local me = com.isAvailable("me_interface") and com.me_interface or error("ME интерфейс не подключен")
+local pim = com.isAvailable("pim") and com.pim or error("PIM не подключен")
+local gpu = com.gpu
+local w, h = 80, 25
+gpu.setResolution(w, h)
+
+-- Константы
+local CURRENCY_NAME = "Эмы"
+local SHOP_CONFIG_PATH = "shop_config.cfg"
+local BALANCES_PATH = "balances.cfg"
+local TRANSLATE_PATH = "translate.cfg"
+local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
+local DEFAULT_PRICE = 10 -- Цена по умолчанию для новых предметов
+
+-- Корректные логотипы магазина
+local logoTop = [[
+███████╗ █████╗ ███████╗ █████╗ ███████╗████████╗ ██████╗ ██████╗ ███████╗
+██╔════╝██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
+█████╗  ███████║█████╗  ███████║███████╗   ██║   ██║   ██║██████╔╝█████╗  
+██╔══╝  ██╔══██║██╔══╝  ██╔══██║╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝  
+██║     ██║  ██║██║     ██║  ██║███████║   ██║   ╚██████╔╝██║  ██║███████╗
+╚═╝     ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+]]
+
+local logoBottom = [[
+███╗   ███╗ ██████╗ ███████╗██╗  ██╗██╗██╗     ██╗     
+████╗ ████║██╔════╝ ██╔════╝██║ ██╔╝██║██║     ██║     
+██╔████╔██║██║      ███████╗█████╔╝ ██║██║     ██║     
+██║╚██╔╝██║██║      ╚════██║██╔═██╗ ██║██║     ██║     
+██║ ╚═╝ ██║╚██████╗ ███████║██║  ██╗██║███████╗███████╗
+╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
+]]
+
+-- Настройки магазина по умолчанию
+local defaultConfig = {
+    items = {},    -- Постоянный каталог товаров
+    sellItems = {["minecraft:planks"] = "Дубовые доски",  -- TODO: Перевести
+    ["minecraft:sapling"] = "Саженец дуба",  -- TODO: Перевести
+    ["minecraft:gravel"] = "Гравий",  -- TODO: Перевести
+    ["minecraft:log"] = "Дуб",  -- TODO: Перевести
+    ["minecraft:sticky_piston"] = "Липкий поршень",  -- TODO: Перевести
+    ["minecraft:web"] = "Паутина",  -- TODO: Перевести
+    ["minecraft:piston"] = "Поршень",  -- TODO: Перевести
+    ["minecraft:wool"] = "Шерсть",  -- TODO: Перевести
+    ["minecraft:brown_mushroom"] = "Гриб",  -- TODO: Перевести
+    ["minecraft:red_mushroom"] = "Мухомор",  -- TODO: Перевести
+    ["minecraft:tnt"] = "ТНТ",  -- TODO: Перевести
+    ["minecraft:bookshelf"] = "Книжная полка",  -- TODO: Перевести
+    ["minecraft:obsidian"] = "Обсидиан",  -- TODO: Перевести
+    ["minecraft:chest"] = "Сундук",  -- TODO: Перевести
+    ["minecraft:lever"] = "Рычаг",  -- TODO: Перевести
+    ["minecraft:redstone_torch"] = "Красный факел",  -- TODO: Перевести
+    ["minecraft:ice"] = "Лёд",  -- TODO: Перевести
+    ["minecraft:snow"] = "Снег",  -- TODO: Перевести
+    ["minecraft:cactus"] = "Кактус",  -- TODO: Перевести
+    ["minecraft:clay"] = "Глина",  -- TODO: Перевести
+    ["minecraft:pumpkin"] = "Тыква",  -- TODO: Перевести
+    ["minecraft:soul_sand"] = "Песок душ",  -- TODO: Перевести
+    ["minecraft:glowstone"] = "Светокамень",  -- TODO: Перевести
+    ["minecraft:enchanting_table"] = "Стол зачарования",  -- TODO: Перевести
+    ["minecraft:dragon_egg"] = "Яйцо дракона",  -- TODO: Перевести
+    ["minecraft:ender_chest"] = "Эндер-сундук",  -- TODO: Перевести
+    ["minecraft:anvil"] = "Наковальня",  -- TODO: Перевести
+    ["minecraft:redstone_block"] = "Блок красного камня",  -- TODO: Перевести
+    ["minecraft:coal_block"] = "Угольный блок",  -- TODO: Перевести
+    ["IC2:blockAlloyGlass"] = "Укреплённое стекло",  -- TODO: Перевести
+    ["IC2:blockKineticGenerator"] = "Кинетический ветрогенератор",  -- TODO: Перевести
+    ["IC2:blockHeatGenerator"] = "Электрический теплогенератор",  -- TODO: Перевести
+    ["IC2:blockGenerator"] = "Генератор",  -- TODO: Перевести
+    ["IC2:blockReactorChamber"] = "Камера реактора",  -- TODO: Перевести
+    ["IC2:blockReactorRedstonePort"] = "Реакторный проводник красного камня",  -- TODO: Перевести
+    ["IC2:blockreactorvessel"] = "Реакторный корпус",  -- TODO: Перевести
+    ["IC2:blockElectric"] = "Трансформатор НН",  -- TODO: Перевести
+    ["IC2:blockChargepad"] = "Заряжающая плита",  -- TODO: Перевести
+    ["IC2:blockMachine"] = "Основной корпус механизма",  -- TODO: Перевести
+    ["IC2:blockMachine2"] = "Телепортер",  -- TODO: Перевести
+    ["IC2:blockMachine3"] = "Паровой генератор",  -- TODO: Перевести
+    ["IC2:blockPersonal"] = "Личный сейс",  -- TODO: Перевести
+    ["IC2:blockCrop"] = "Жёрдочки",  -- TODO: Перевести
+    ["AdvancedSolarPanel:BlockMolecularTransformer"] = "Молекулярный преобразователь",  -- TODO: Перевести
+    ["appliedenergistics2:tile.OreQuartz"] = "Руда истинного кварц",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockQuartz"] = "Блок истинного кварца",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockQuartzGlass"] = "Кварцевое стекло",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockQuartzLamp"] = "Заряженное кварцевое стекло",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockFluix"] = "Блок флюикса",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockSkyStone"] = "Небесный камень",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockSkyCompass"] = "Компас на метеорит",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockInscriber"] = "Высекатель",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockCharger"] = "Зарядник",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockSecurity"] = "Терминал безопасности МЭ",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockQuantumRing"] = "Квантовое кольцо МЭ",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockQuantumLinkChamber"] = "Камера квантовой связи МЭ",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockController"] = "Контроллер МЭ",  -- TODO: Перевести
+    ["minecraft:flint_and_steel"] = "Огниво",  -- TODO: Перевести
+    ["minecraft:arrow"] = "Стрела",  -- TODO: Перевести
+    ["minecraft:coal"] = "Уголь",  -- TODO: Перевести
+    ["minecraft:diamond"] = "Алмаз",  -- TODO: Перевести
+    ["minecraft:stick"] = "Палка",  -- TODO: Перевести
+    ["minecraft:string"] = "Нить",  -- TODO: Перевести
+    ["minecraft:feather"] = "Перо",  -- TODO: Перевести
+    ["minecraft:gunpowder"] = "Порох",  -- TODO: Перевести
+    ["minecraft:wheat"] = "Пшеница",  -- TODO: Перевести
+    ["minecraft:sign"] = "Табличка",  -- TODO: Перевести
+    ["minecraft:bucket"] = "Ведро",  -- TODO: Перевести
+    ["minecraft:water_bucket"] = "Ведро воды",  -- TODO: Перевести
+    ["minecraft:lava_bucket"] = "Ведро лавы",  -- TODO: Перевести
+    ["minecraft:redstone"] = "Красная пыль",  -- TODO: Перевести
+    ["minecraft:milk_bucket"] = "Ведро молока",  -- TODO: Перевести
+    ["minecraft:clay_ball"] = "Глина",  -- TODO: Перевести
+    ["minecraft:reeds"] = "Сахарный тростник",  -- TODO: Перевести
+    ["minecraft:paper"] = "Бумага",  -- TODO: Перевести
+    ["minecraft:book"] = "Книга",  -- TODO: Перевести
+    ["minecraft:slime_ball"] = "Сгусток слизи",  -- TODO: Перевести
+    ["minecraft:egg"] = "Яйцо",  -- TODO: Перевести
+    ["minecraft:fishing_rod"] = "Удочка",  -- TODO: Перевести
+    ["minecraft:glowstone_dust"] = "Светопыль",  -- TODO: Перевести
+    ["minecraft:dye"] = "Чернильный мешок",  -- TODO: Перевести
+    ["minecraft:bone"] = "Кость",  -- TODO: Перевести
+    ["minecraft:sugar"] = "Сахар",  -- TODO: Перевести
+    ["minecraft:repeater"] = "Повторитель красного камня",  -- TODO: Перевести
+    ["minecraft:shears"] = "Ножницы",  -- TODO: Перевести
+    ["minecraft:ender_pearl"] = "Жемчуг Края",  -- TODO: Перевести
+    ["minecraft:blaze_rod"] = "Стержень ифрита",  -- TODO: Перевести
+    ["minecraft:ghast_tear"] = "Слеза гаста",  -- TODO: Перевести
+    ["minecraft:gold_nugget"] = "Золотой самородок",  -- TODO: Перевести
+    ["minecraft:nether_wart"] = "Адский нарост",  -- TODO: Перевести
+    ["minecraft:spider_eye"] = "Паучий глаз",  -- TODO: Перевести
+    ["minecraft:fermented_spider_eye"] = "Маринованный паучий глаз",  -- TODO: Перевести
+    ["minecraft:blaze_powder"] = "Огненный порошок",  -- TODO: Перевести
+    ["minecraft:magma_cream"] = "Сгусток магмы",  -- TODO: Перевести
+    ["minecraft:brewing_stand"] = "Варочная стойка",  -- TODO: Перевести
+    ["minecraft:cauldron"] = "Котёл",  -- TODO: Перевести
+    ["minecraft:ender_eye"] = "Око Эндера",  -- TODO: Перевести
+    ["minecraft:speckled_melon"] = "Сверкающий арбуз",  -- TODO: Перевести
+    ["minecraft:emerald"] = "Изумруд",  -- TODO: Перевести
+    ["minecraft:poisonous_potato"] = "Ядовитый картофель",  -- TODO: Перевести
+    ["minecraft:skull"] = "Череп скелета",  -- TODO: Перевести
+    ["minecraft:nether_star"] = "Адская звезда",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockDrive"] = "Накопитель МЭ",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockChest"] = "Сундук МЭ",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockInterface"] = "Интерфейс МЭ",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockCellWorkbench"] = "Верстак для ячеек",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockIOPort"] = "МЭ порт ввода-выводы",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockCondenser"] = "Конденсатор материи",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockEnergyAcceptor"] = "Приёмщик энергии",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockQuartzGrowthAccelerator"] = "Ускоритель роста кристаллов",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockEnergyCell"] = "Энергетическая ячейка",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockDenseEnergyCell"] = "Плотная энергетическая ячейка",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockCraftingUnit"] = "Блок обработки создание",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockCraftingStorage"] = "1К Хранилище создания",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockCraftingMonitor"] = "Монитор создания",  -- TODO: Перевести
+    ["appliedenergistics2:tile.BlockMolecularAssembler"] = "Молекулярный сборщик",  -- TODO: Перевести
+    ["Forestry:apicultureChest"] = "Сундук пчеловода",  -- TODO: Перевести
+    ["Forestry:factory"] = "Плотник",  -- TODO: Перевести
+    ["Forestry:factory2"] = "Квантовый плотник",  -- TODO: Перевести
+    ["Forestry:lepidopterology"] = "Сундук лепидоптеролога",  -- TODO: Перевести
+    ["ExtraTrees:machine"] = "Столяр",  -- TODO: Перевести
+    ["BuildCraft|Silicon:laserBlock"] = "Лазер",  -- TODO: Перевести
+    ["BuildCraft|Silicon:laserTableBlock"] = "Сборочный стол",  -- TODO: Перевести
+    ["ThermalFoundation:Ore"] = "Ферритовая руда",  -- TODO: Перевести
+    ["IronChest:BlockIronChest"] = "Железный сундук",  -- TODO: Перевести
+    ["PowerUtils:BlockMain"] = "Силовой конвертер",  -- TODO: Перевести
+    ["ThermalExpansion:Machine"] = "Краснопечь (ультимативная)",  -- TODO: Перевести
+    ["ThermalExpansion:Device"] = "Аппарат приобретения",  -- TODO: Перевести
+    ["ThermalExpansion:Tank"] = "Резонирующий переносной бак",  -- TODO: Перевести
+    ["ThermalExpansion:Plate"] = "Импульсная пластина",  -- TODO: Перевести
+    ["ThermalExpansion:Frame"] = "Рамка механизма",  -- TODO: Перевести
+    ["ThermalExpansion:Glass"] = "Закалённое стекло",  -- TODO: Перевести
+    ["IC2NuclearControl:blockNuclearControlMain"] = "Датчик температуры",  -- TODO: Перевести
+    ["ProjRed|Exploration:projectred.exploration.ore"] = "Рубиновая руда",  -- TODO: Перевести
+    ["ProjRed|Illumination:projectred.illumination.lamp"] = "Инвертированная белая лампа",  -- TODO: Перевести
+    ["AFSU:AFSU"] = "ЭХПФ",  -- TODO: Перевести
+    ["CompactSolars:CompactSolarBlock"] = "Солнечная панель низкого напряжения",  -- TODO: Перевести
+    ["MineFactoryReloaded:machine.0"] = "Сажалка",  -- TODO: Перевести
+    ["MineFactoryReloaded:machine.1"] = "Выбрасыватель",  -- TODO: Перевести
+    ["MineFactoryReloaded:conveyor"] = "Конвейерная лента (красная)",  -- TODO: Перевести
+    ["MineFactoryReloaded:rubberwood.sapling"] = "Саженец гевеи",  -- TODO: Перевести
+    ["MineFactoryReloaded:machine.2"] = "Автонаковальня",  -- TODO: Перевести
+    ["ThermalDynamics:ThermalDynamics_48"] = "Структурный канал (непрозрачный)",  -- TODO: Перевести
+    ["ThermalDynamics:ThermalDynamics_32"] = "Канал предметов",  -- TODO: Перевести
+    ["ThermalDynamics:ThermalDynamics_64"] = "Виадук",  -- TODO: Перевести
+    ["ThermalDynamics:ThermalDynamics_0"] = "Свинцовый флюсопровод",  -- TODO: Перевести
+    ["ThermalDynamics:ThermalDynamics_16"] = "Умеренный флюидопровод (непрозрачный)",  -- TODO: Перевести
+    ["ae2stuff:Inscriber"] = "Продвинутый высекатель",  -- TODO: Перевести
+    ["ae2stuff:Wireless"] = "Беспроводной соединитель",  -- TODO: Перевести
+    ["ae2stuff:Grower"] = "Камера роста кристаллов",  -- TODO: Перевести
+    ["OpenBlocks:elevator"] = "Лифт",  -- TODO: Перевести
+    ["dwcity:Torch2"] = "tile.Torch2.name",  -- TODO: Перевести
+    ["OpenComputers:charger"] = "Зарядное устройство",  -- TODO: Перевести
+    ["OpenComputers:geolyzer"] = "Геоанализатор",  -- TODO: Перевести
+    ["OpenComputers:powerDistributor"] = "Распределитель энергии",  -- TODO: Перевести
+    ["OpenComputers:relay"] = "Реле",  -- TODO: Перевести
+    ["OpenComputers:rack"] = "Стойка",  -- TODO: Перевести
+    ["OpenComputers:keyboard"] = "Клавиатура",  -- TODO: Перевести
+    ["OpenComputers:case3"] = "Корпус компьютера (уровень 3)",  -- TODO: Перевести
+    ["OpenComputers:case2"] = "Корпус компьютера (уровень 2)",  -- TODO: Перевести
+    ["OpenComputers:case1"] = "Корпус компьютера (уровень 1)",  -- TODO: Перевести
+    ["OpenComputers:disassembler"] = "Демонтажник",  -- TODO: Перевести
+    ["OpenComputers:screen3"] = "Экран (уровень 3)",  -- TODO: Перевести
+    ["OpenComputers:diskDrive"] = "Дисковод",  -- TODO: Перевести
+    ["OpenComputers:adapter"] = "Адаптер",  -- TODO: Перевести
+    ["OpenPeripheral:pim"] = "PIM",  -- TODO: Перевести
+    ["OpenPeripheral:selector"] = "Селектор предметов",  -- TODO: Перевести
+    ["OpenComputers:raid"] = "RAID-массив",  -- TODO: Перевести
+    ["OpenComputers:capacitor"] = "Конденсатор",  -- TODO: Перевести
+    ["OpenComputers:powerConverter"] = "Преобразователь энергии",  -- TODO: Перевести
+    ["OpenComputers:printer"] = "3D-принтер",  -- TODO: Перевести
+    ["OpenComputers:assembler"] = "Сборщик электроники",  -- TODO: Перевести
+    ["OpenComputers:cable"] = "Кабель",  -- TODO: Перевести
+    ["DraconicEvolution:draconium"] = "Дракониевый блок",  -- TODO: Перевести
+    ["DraconicEvolution:energyInfuser"] = "Наполнитель энергии",  -- TODO: Перевести
+    ["DraconicEvolution:infusedObsidian"] = "Заряженный драконием обсидиан",  -- TODO: Перевести
+    ["DraconicEvolution:energyCrystal"] = "Энергетический реле",  -- TODO: Перевести
+    ["DraconicEvolution:playerDetectorAdvanced"] = "Продвинутый детектор игроков",  -- TODO: Перевести
+    ["dwcity:Splitter"] = "Солнечный рефлектор",  -- TODO: Перевести
+    ["dwcity:ThoriumBlock2"] = "Блок радиоактивной стали",  -- TODO: Перевести
+    ["dwcity:ThoriumBlock"] = "Ториевый блок",  -- TODO: Перевести
+    ["dwcity:AdvancedMachine"] = "Квантовый мех",  -- TODO: Перевести
+    ["extracells:fluidcrafter"] = "МЭ жидкостный сборщик",  -- TODO: Перевести
+    ["extracells:certustank"] = "Резервуар из истинного кварца",  -- TODO: Перевести
+    ["extracells:ecbaseblock"] = "МЭ жидкостный интерфейс ",  -- TODO: Перевести
+    ["EnderIO:blockKillerJoe"] = "Убийца Джо",  -- TODO: Перевести
+    ["EnderIO:blockSagMill"] = "Дробитель",  -- TODO: Перевести
+    ["EnderIO:blockFusedQuartz"] = "Расплавленный кварц",  -- TODO: Перевести
+    ["EnderIO:blockWirelessCharger"] = "Беспроводная зарядка",  -- TODO: Перевести
+    ["EnderIO:blockAlloySmelter"] = "Завод сплавов",  -- TODO: Перевести
+    ["EnderIO:blockVacuumChest"] = "Вакуумный сундук",  -- TODO: Перевести
+    ["EnderIO:blockIngotStorage"] = "Блок вибрирующего сплава",  -- TODO: Перевести
+    ["EnderIO:blockExperienceObelisk"] = "Обелиск опыта",  -- TODO: Перевести
+    ["EnderIO:blockSliceAndSplice"] = "Отрубатель и сращиватель",  -- TODO: Перевести
+    ["EnderIO:blockTravelAnchor"] = "Якорь перемещения",  -- TODO: Перевести
+    ["ae2stuff:WirelessNano"] = "Нано беспроводной соединитель",  -- TODO: Перевести
+    ["luxinfineitems:advancedDrive"] = "Улучшенный МЭ накопитель",  -- TODO: Перевести
+    ["luxinfineitems:AEUltInterface"] = "Совершенный МЭ интерфейс",  -- TODO: Перевести
+    ["luxinfineitems:AEAdvMolecularAssembler"] = "Продвинутый молекулярный сборщик",  -- TODO: Перевести
+    ["ProjRed|Exploration:projectred.exploration.barrel"] = "Бочка предметов",  -- TODO: Перевести
+    ["luxinfineitems:ExtendedPatternsEncoder"] = "Расширенный кодировщик шаблонов",  -- TODO: Перевести
+    ["luxinfineitems:autoQuartzGrower"] = "Камера мгновенного роста кристаллов",  -- TODO: Перевести
+    ["luxinfineitems:advancedCraftingStorage"] = "Хранилище крафта MK1",  -- TODO: Перевести
+    ["luxinfineitems:AEAdvInterface"] = "Улучшенный МЭ интерфейс",  -- TODO: Перевести
+    ["luxinfineitems:autoQuartzCharger"] = "МЭ Зарядник кварца",  -- TODO: Перевести
+    ["luxinfineitems:CompressedCPU"] = "Контроллер автокрафта",  -- TODO: Перевести
+    ["luxinfineitems:squareEnergyCharger"] = "Промышленная зарядная станция",  -- TODO: Перевести
+    ["Avaritia:Dire_Crafting"] = "Верстак Дайра",  -- TODO: Перевести
+    ["ae2stuff:WirelessElite"] = "Элитный беспроводной соединитель",  -- TODO: Перевести
+    ["luxinfineitems:autoLampFabric"] = "Производитель ламп МЭ",  -- TODO: Перевести
+    ["luxinfineitems:advancedCraftingAccelerator"] = "Узел крафта MK1",  -- TODO: Перевести
+    ["luxinfineitems:ExtremeAEAutocraft"] = "Экстремальный молекулярный сборщик",  -- TODO: Перевести
+    ["luxinfineitems:AECraftingSupplier"] = "Поставщик уровней МЭ",  -- TODO: Перевести
+    ["luxinfineitems:AdvancedEnergyCell"] = "Базовая энергоячейка",  -- TODO: Перевести
+    ["luxinfineitems:advancedCraftingAccelerator1"] = "Узел крафта MK4",  -- TODO: Перевести
+    ["ae2stuff:WirelessAdvanced"] = "Продвинутый беспроводной соединитель",  -- TODO: Перевести
+    ["luxinfineitems:AEExtInterface"] = "Расширенный интерфейс ЭЭ",  -- TODO: Перевести
+    ["luxinfineitems:autoProcessorPress"] = "Пресс процессоров МЭ",  -- TODO: Перевести
+    ["etfuturum:ancient_debris"] = "Древние обломки",  -- TODO: Перевести
+    ["jgendustry:imprinter"] = "Генетический импринтер",  -- TODO: Перевести
+    ["metadrive:block_energy_generator_rtg"] = "tile.block_energy_generator_rtg.tier3.name",  -- TODO: Перевести
+    ["jgendustry:mutagen_producer"] = "Производитель мутагенов",  -- TODO: Перевести
+    ["etfuturum:magma"] = "Блок магмы",  -- TODO: Перевести
+    ["metadrive:block_cobblestone_generator"] = "tile.block_cobblestone_generator.name",  -- TODO: Перевести
+    ["etfuturum:lily_of_the_valley"] = "Ландыш",  -- TODO: Перевести
+    ["metadrive:block_reactor_coolant_injector"] = "tile.block_reactor_coolant_injector.name",  -- TODO: Перевести
+    ["jgendustry:replicator"] = "Генетический репликатор",  -- TODO: Перевести
+    ["etfuturum:chorus_flower"] = "Цветок коруса",  -- TODO: Перевести
+    ["metadrive:block_advanced_liquifier"] = "tile.block_advanced_liquifier.name",  -- TODO: Перевести
+    ["etfuturum:coarse_dirt"] = "Грубая земля",  -- TODO: Перевести
+    ["jgendustry:transposer"] = "Генетический транспозер",  -- TODO: Перевести
+    ["metadrive:block_advanced_centrifuge"] = "tile.block_advanced_centrifuge.name",  -- TODO: Перевести
+    ["metadrive:block_advanced_carpenter"] = "tile.block_advanced_carpenter.name",  -- TODO: Перевести
+    ["etfuturum:white_bed"] = "Белая кровать",  -- TODO: Перевести
+    ["etfuturum:brown_mushroom"] = "Гриб",  -- TODO: Перевести
+    ["jgendustry:sampler"] = "Генетический сэмплер",  -- TODO: Перевести
+    ["etfuturum:red_mushroom"] = "Гриб",  -- TODO: Перевести
+    ["jgendustry:mutatron_adv"] = "Продвинутый мутатрон",  -- TODO: Перевести
+    ["metadrive:block_advanced_extractor"] = "tile.block_advanced_extractor.name",  -- TODO: Перевести
+    ["IC2:itemRubber"] = "Каучук",  -- TODO: Перевести
+    ["IC2:itemFluidCell"] = "Универсальная ячейка жидкости",  -- TODO: Перевести
+    ["IC2:itemRecipePart"] = "Катушка",  -- TODO: Перевести
+    ["IC2:itemCasing"] = "Медный корпус для предмета",  -- TODO: Перевести
+    ["IC2:itemPlates"] = "Медная пластина",  -- TODO: Перевести
+    ["IC2:itemDensePlates"] = "Плотная медная пластина",  -- TODO: Перевести
+    ["IC2:itemDustSmall"] = "Маленькая кучка литиевой пыли",  -- TODO: Перевести
+    ["IC2:itemDust"] = "Угольная пыль",  -- TODO: Перевести
+    ["IC2:itemDust2"] = "Алмазная пыль",  -- TODO: Перевести
+    ["IC2:itemIngot"] = "Медный слиток",  -- TODO: Перевести
+    ["IC2:reactorLithiumCell"] = "Топливный стержень (литиевый)",  -- TODO: Перевести
+    ["IC2:itemTritiumCell"] = "Топливный стержень (тритиевый)",  -- TODO: Перевести
+    ["IC2:itemUran"] = "Обогащённое урановое ядерное топливо",  -- TODO: Перевести
+    ["IC2:itemMOX"] = "MOX ядерное топливо",  -- TODO: Перевести
+    ["IC2:itemPlutonium"] = "Плутоний",  -- TODO: Перевести
+    ["IC2:itemPlutoniumSmall"] = "Маленькая кучка плутония",  -- TODO: Перевести
+    ["IC2:itemUran235small"] = "Маленькая кучка урана-235",  -- TODO: Перевести
+    ["IC2:itemUran238"] = "Уран-238",  -- TODO: Перевести
+    ["IC2:itemFuelRod"] = "Топливный стержень (пустой)",  -- TODO: Перевести
+    ["IC2:itemPartCircuit"] = "Электронная схема",  -- TODO: Перевести
+    ["IC2:itemPartCircuitAdv"] = "Продвинутая схема",  -- TODO: Перевести
+    ["IC2:itemPartAlloy"] = "Продвинутый сплав",  -- TODO: Перевести
+    ["IC2:itemPartCarbonFibre"] = "Сырое углеродное волокно",  -- TODO: Перевести
+    ["IC2:itemPartCarbonMesh"] = "Сырая углеродная сетка",  -- TODO: Перевести
+    ["IC2:itemPartCarbonPlate"] = "Углеродная пластина",  -- TODO: Перевести
+    ["IC2:itemOreIridium"] = "Иридиевая руда",  -- TODO: Перевести
+    ["IC2:itemPartIridium"] = "Упрочнённая иридиевая пластина",  -- TODO: Перевести
+    ["IC2:itemTreetap"] = "Кран для сока",  -- TODO: Перевести
+    ["IC2:itemToolWrench"] = "Гаечный ключ",  -- TODO: Перевести
+    ["IC2:itemToolCutter"] = "Резак",  -- TODO: Перевести
+    ["IC2:itemToolbox"] = "Ящик для инструментов",  -- TODO: Перевести
+    ["IC2:itemToolForgeHammer"] = "Кузнечный молот",  -- TODO: Перевести
+    ["IC2:itemToolDrill"] = "Горный бур",  -- TODO: Перевести
+    ["IC2:itemToolDDrill"] = "Алмазный бур",  -- TODO: Перевести
+    ["IC2:itemToolChainsaw"] = "Бензопила",  -- TODO: Перевести
+    ["IC2:itemToolWrenchElectric"] = "Электрический ключ",  -- TODO: Перевести
+    ["IC2:itemTreetapElectric"] = "Электрический кран для сока",  -- TODO: Перевести
+    ["IC2:itemToolMiningLaser"] = "Горный лазер",  -- TODO: Перевести
+    ["IC2:itemToolMEter"] = "EU-измеритель",  -- TODO: Перевести
+    ["IC2:obscurator"] = "Обскуратор",  -- TODO: Перевести
+    ["IC2:itemFreq"] = "Передатчик частоты",  -- TODO: Перевести
+    ["IC2:itemNanoSaber"] = "Наносабля",  -- TODO: Перевести
+    ["IC2:itemArmorAlloyChestplate"] = "Композитный жилет",  -- TODO: Перевести
+    ["IC2:itemArmorNanoHelmet"] = "Шлем нанокостюма",  -- TODO: Перевести
+    ["IC2:itemArmorNanoChestplate"] = "Бронежилет нанокостюма",  -- TODO: Перевести
+    ["IC2:itemArmorNanoLegs"] = "Поножи нанокостюма",  -- TODO: Перевести
+    ["IC2:itemArmorNanoBoots"] = "Ботинки нанокостюма",  -- TODO: Перевести
+    ["IC2:itemArmorQuantumHelmet"] = "Шлем квантового костюма",  -- TODO: Перевести
+    ["IC2:itemArmorQuantumChestplate"] = "Бронежилет квантового костюма",  -- TODO: Перевести
+    ["IC2:itemArmorQuantumLegs"] = "Поножи квантового костюма",  -- TODO: Перевести
+    ["IC2:itemArmorQuantumBoots"] = "Ботинки квантового костюма",  -- TODO: Перевести
+    ["IC2:itemArmorJetpackElectric"] = "Электрический реактивный ранец",  -- TODO: Перевести
+    ["IC2:itemArmorBatpack"] = "Бат-пак",  -- TODO: Перевести
+    ["IC2:itemArmorAdvBatpack"] = "Продвинутый бат-пак",  -- TODO: Перевести
+    ["IC2:itemArmorEnergypack"] = "Энерго-пак",  -- TODO: Перевести
+    ["IC2:itemArmorCFPack"] = "УФ-рюкзак",  -- TODO: Перевести
+    ["IC2:itemBatREDischarged"] = "РЭ-батарея",  -- TODO: Перевести
+    ["IC2:itemAdvBat"] = "Продвинутая РЭ-батарея",  -- TODO: Перевести
+    ["IC2:itemBatCrystal"] = "Энергетический кристалл",  -- TODO: Перевести
+    ["IC2:itemBatLamaCrystal"] = "Лапотронный кристалл",  -- TODO: Перевести
+    ["IC2:itemBatChargeAdv"] = "Продвинутая зарядная батарея",  -- TODO: Перевести
+    ["IC2:itemBatChargeCrystal"] = "Зарядный энергокристалл",  -- TODO: Перевести
+    ["IC2:itemBatChargeLamaCrystal"] = "Зарядный лапотронный кристалл",  -- TODO: Перевести
+    ["IC2:itemCable"] = "Изолированный медный кабель",  -- TODO: Перевести
+    ["IC2:itemCellEmpty"] = "Пустая ячейка",  -- TODO: Перевести
+    ["IC2:itemTinCan"] = "Жестяная банка",  -- TODO: Перевести
+    ["IC2:itemTinCanFilled"] = "Жестяная банка (наполненная)",  -- TODO: Перевести
+    ["IC2:reactorMOXSimple"] = "Топливный стержень (MOX)",  -- TODO: Перевести
+    ["IC2:reactorMOXDual"] = "Двойной топливный стержень (MOX)",  -- TODO: Перевести
+    ["IC2:reactorMOXQuad"] = "Четверной топливный стержень (MOX)",  -- TODO: Перевести
+    ["IC2:reactorUraniumSimple"] = "Топливный стержень (урановый)",  -- TODO: Перевести
+    ["IC2:reactorUraniumDual"] = "Двойной топливный стержень (урановый)",  -- TODO: Перевести
+    ["IC2:reactorUraniumQuad"] = "Четверной топливный стержень (урановый)",  -- TODO: Перевести
+    ["IC2:reactorCoolantSimple"] = "Охлаждающая ячейка 10к",  -- TODO: Перевести
+    ["IC2:reactorCoolantTriple"] = "Охлаждающая ячейка 30к",  -- TODO: Перевести
+    ["IC2:reactorCoolantSix"] = "Охлаждающая ячейка 60к",  -- TODO: Перевести
+    ["IC2:reactorPlating"] = "Облицовка реактора",  -- TODO: Перевести
+    ["IC2:reactorPlatingHeat"] = "Облицовка реактора с теплоёмкостью",  -- TODO: Перевести
+    ["IC2:reactorPlatingExplosive"] = "Облицовка реактора сдержки",  -- TODO: Перевести
+    ["IC2:reactorHeatSwitch"] = "Теплообменник",  -- TODO: Перевести
+    ["IC2:reactorHeatSwitchCore"] = "Теплообменник реактора",  -- TODO: Перевести
+    ["IC2:reactorHeatSwitchSpread"] = "Теплообменник компонента",  -- TODO: Перевести
+    ["IC2:reactorHeatSwitchDiamond"] = "Продвинутый теплообменник",  -- TODO: Перевести
+    ["IC2:reactorVent"] = "Теплоотвод",  -- TODO: Перевести
+    ["IC2:reactorVentCore"] = "Теплоотвод реактора",  -- TODO: Перевести
+    ["IC2:reactorVentGold"] = "Разогнанный теплоотвод",  -- TODO: Перевести
+    ["IC2:reactorVentSpread"] = "Теплоотвод компонента",  -- TODO: Перевести
+    ["IC2:reactorVentDiamond"] = "Продвинутый теплоотвод",  -- TODO: Перевести
+    ["IC2:reactorReflector"] = "Нейтронный отражатель",  -- TODO: Перевести
+    ["IC2:reactorReflectorThick"] = "Толстый нейтронный отражатель",  -- TODO: Перевести
+    ["IC2:reactorCondensator"] = "КОНДЕНСАТОР RSH",  -- TODO: Перевести
+    ["IC2:reactorCondensatorLap"] = "КОНДЕНСАТОР LZH",  -- TODO: Перевести
+    ["IC2:itemScrap"] = "Лом",  -- TODO: Перевести
+    ["IC2:itemFuelPlantBall"] = "Растительный шар",  -- TODO: Перевести
+    ["IC2:itemToolPainter"] = "Покрасчик",  -- TODO: Перевести
+    ["IC2:itemToolPainterPurple"] = "Фиолетовый покрасчик",  -- TODO: Перевести
+    ["IC2:itemToolPainterCyan"] = "Бирюзовый покрасчик",  -- TODO: Перевести
+    ["IC2:itemToolPainterLime"] = "Лаймовый покрасчик",  -- TODO: Перевести
+    ["IC2:itemToolPainterOrange"] = "Оранжевый покрасчик",  -- TODO: Перевести
+    ["IC2:upgradeModule"] = "Улучшение разгона",  -- TODO: Перевести
+    ["IC2:itemDoorAlloy"] = "Упрочнённая дверь",  -- TODO: Перевести
+    ["IC2:itemPartCFPowder"] = "УФ-порошок",  -- TODO: Перевести
+    ["IC2:itemGrinPowder"] = "Порошок ухмылки",  -- TODO: Перевести
+    ["IC2:itemWeed"] = "Сорняк",  -- TODO: Перевести
+    ["IC2:itemCropnalyzer"] = "Анализатор сельхозкультур",  -- TODO: Перевести
+    ["IC2:itemFertilizer"] = "Удобрение",  -- TODO: Перевести
+    ["IC2:itemCellHydrant"] = "Увлажняющая ячейка",  -- TODO: Перевести
+    ["IC2:itemToolHoe"] = "Электрическая мотыга",  -- TODO: Перевести
+    ["IC2:itemWeedEx"] = "Удалитель сорняков",  -- TODO: Перевести
+    ["IC2:itemCofeeBeans"] = "Кофейные зёрна",  -- TODO: Перевести
+    ["IC2:itemHops"] = "Хмель",  -- TODO: Перевести
+    ["IC2:itemwcarbonrotor"] = "Ротор кинетической коробки передач (углеродный)",  -- TODO: Перевести
+    ["AdvancedSolarPanel:asp_crafting_items"] = "Саннарий",  -- TODO: Перевести
+    ["appliedenergistics2:item.ToolCertusQuartzWrench"] = "Ключ рудоносного кварца",  -- TODO: Перевести
+    ["appliedenergistics2:item.ToolNetherQuartzCuttingKnife"] = "Нож для резки незерского кварца",  -- TODO: Перевести
+    ["appliedenergistics2:item.ToolWirelessTerminal"] = "Беспроводной терминал",  -- TODO: Перевести
+    ["appliedenergistics2:item.ToolBiometricCard"] = "Биометрическая карта - Shenzy",  -- TODO: Перевести
+    ["appliedenergistics2:item.ToolPortableCell"] = "Портативная ячейка",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemBasicStorageCell.1k"] = "Ячейка хранения МЭ 1k",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemBasicStorageCell.4k"] = "Ячейка хранения МЭ 4k",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemBasicStorageCell.16k"] = "Ячейка хранения МЭ 16k",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemBasicStorageCell.64k"] = "Ячейка хранения МЭ 64k",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemFacade"] = "Фасад кабеля - Колонна рудоносного кварца",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemCrystalSeed"] = "Семя рудоносного кварца",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemEncodedPattern"] = "Закодированный шаблон",  -- TODO: Перевести
+    ["appliedenergistics2:item.ToolColorApplicator"] = "Аппликатор цвета - пустой",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemPaintBall"] = "Красящий шарик - жёлтый",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemMultiMaterial"] = "Кристалл рудоносного кварца",  -- TODO: Перевести
+    ["appliedenergistics2:item.ItemMultiPart"] = "Стеклянный кабель МЭ - бирюзовый",  -- TODO: Перевести
+    ["Forestry:fertilizerCompound"] = "Удобрение",  -- TODO: Перевести
+    ["Forestry:apatite"] = "Апатит",  -- TODO: Перевести
+    ["Forestry:wrench"] = "Гаечный ключ",  -- TODO: Перевести
+    ["Forestry:sturdyMachine"] = "Прочный корпус",  -- TODO: Перевести
+    ["Forestry:impregnatedCasing"] = "Пропитанный корпус",  -- TODO: Перевести
+    ["Forestry:craftingMaterial"] = "Тканый шёлк",  -- TODO: Перевести
+    ["Forestry:naturalistHelmet"] = "Очки",  -- TODO: Перевести
+    ["Forestry:chipsets"] = "Базовая печатная плата",  -- TODO: Перевести
+    ["Forestry:solderingIron"] = "Паяльник",  -- TODO: Перевести
+    ["Forestry:thermionicTubes"] = "Медная электронная лампа",  -- TODO: Перевести
+    ["Forestry:oakStick"] = "Пропитанная палка",  -- TODO: Перевести
+    ["Forestry:woodPulp"] = "Древесная масса",  -- TODO: Перевести
+    ["Forestry:mulch"] = "Мульча",  -- TODO: Перевести
+    ["Forestry:beeswax"] = "Пчелиный воск",  -- TODO: Перевести
+    ["Forestry:refractoryWax"] = "Тугоплавкий воск",  -- TODO: Перевести
+    ["Forestry:fruits"] = "Слива",  -- TODO: Перевести
+    ["Forestry:waxCapsule"] = "Восковая капсула",  -- TODO: Перевести
+    ["Forestry:refractoryEmpty"] = "Тугоплавкая капсула",  -- TODO: Перевести
+    ["Forestry:bucketEthanol"] = "Ведро этанола",  -- TODO: Перевести
+    ["Forestry:bucketHoney"] = "Ведро мёда",  -- TODO: Перевести
+    ["Forestry:bucketJuice"] = "Ведро сока",  -- TODO: Перевести
+    ["Forestry:bucketSeedOil"] = "Ведро масла семян",  -- TODO: Перевести
+    ["Forestry:beeQueenGE"] = "Квантовая королева",  -- TODO: Перевести
+    ["Forestry:beeDroneGE"] = "Каменистый трутень",  -- TODO: Перевести
+    ["Forestry:beePrincessGE"] = "Квантовая принцесса",  -- TODO: Перевести
+    ["Forestry:beealyzer"] = "Анализатор пчёл",  -- TODO: Перевести
+    ["Forestry:frameUntreated"] = "Необработанная рамка",  -- TODO: Перевести
+    ["Forestry:frameImpregnated"] = "Пропитанная рамка",  -- TODO: Перевести
+    ["Forestry:frameProven"] = "Проверенная рамка",  -- TODO: Перевести
+    ["Forestry:pollen"] = "Скопление пыльцы",  -- TODO: Перевести
+    ["Forestry:propolis"] = "Прополис",  -- TODO: Перевести
+    ["Forestroy:royalJelly"] = "Маточное молочко",  -- TODO: Перевести
+    ["Forestry:beeCombs"] = "Кипящий сот",  -- TODO: Перевести
+    ["Forestry:scoop"] = "Совок",  -- TODO: Перевести
+    ["Forestry:sapling"] = "Саженец хлопкового дерева",  -- TODO: Перевести
+    ["Forestry:pollenFertile"] = "Пыльца яблоневого дуба",  -- TODO: Перевести
+    ["Forestry:treealyzer"] = "Анализатор деревьев",  -- TODO: Перевести
+    ["Forestry:grafter"] = "Прививочный нож",  -- TODO: Перевести
+    ["Forestry:honeyedSlice"] = "Ломтик в меду",  -- TODO: Перевести
+    ["Forestry:ambrosia"] = "Амброзия",  -- TODO: Перевести
+    ["Forestry:flutterlyzer"] = "Анализатор бабочек",  -- TODO: Перевести
+    ["Forestry:butterflyGE"] = "Морфо менелай",  -- TODO: Перевести
+    ["Forestry:minerBag"] = "Рюкзак шахтёра",  -- TODO: Перевести
+    ["BinnieCore:containerRefractory"] = "Капсула с азотом",  -- TODO: Перевести
+    ["BinnieCore:containerCylinder"] = "Цилиндр с сырой ДНК",  -- TODO: Перевести
+    ["Botany:database"] = "База данных ботаника",  -- TODO: Перевести
+    ["Botany:trowelDiamond"] = "Алмазная лопатка",  -- TODO: Перевести
+    ["Botany:soilMeter"] = "Измеритель почвы",  -- TODO: Перевести
+    ["Botany:misc"] = "Порошок массы",  -- TODO: Перевести
+    ["Botany:pigment"] = "Пигмент",  -- TODO: Перевести
+    ["ExtraBees:hiveFrame.soul"] = "Рамка души",  -- TODO: Перевести
+    ["ExtraBees:dictionary"] = "База данных пчеловода",  -- TODO: Перевести
+    ["ExtraTrees:database"] = "База данных лесовода",  -- TODO: Перевести
+    ["ExtraTrees:databaseMoth"] = "База данных лепидоптеролога",  -- TODO: Перевести
+    ["ExtraTrees:misc"] = "Стеклянная арматура",  -- TODO: Перевести
+    ["ExtraTrees:food"] = "Апельсин",  -- TODO: Перевести
+    ["Genetics:misc"] = "Упрочнённый корпус",  -- TODO: Перевести
+    ["Genetics:serum"] = "Сыворотка лесовода",  -- TODO: Перевести
+    ["Genetics:database"] = "База данных генов",  -- TODO: Перевести
+    ["Genetics:analyst"] = "Анализатор",  -- TODO: Перевести
+    ["Genetics:registry"] = "Реестр",  -- TODO: Перевести
+    ["BuildCraft|Core:wrenchItem"] = "Гаечный ключ",  -- TODO: Перевести
+    ["BuildCraft|Core:woodenGearItem"] = "Деревянная шестерня",  -- TODO: Перевести
+    ["BuildCraft|Core:stoneGearItem"] = "Каменная шестерня",  -- TODO: Перевести
+    ["BuildCraft|Core:diamondGearItem"] = "Алмазная шестерня",  -- TODO: Перевести
+    ["BuildCraft|Transport:pipeWaterproof"] = "Уплотнитель труб",  -- TODO: Перевести
+    ["BuildCraft|Transport:item.buildcraftPipe.pipeitemsvoid"] = "Транспортная труба пустоты",  -- TODO: Перевести
+    ["BuildCraft|Transport:item.buildcraftPipe.pipefluidsvoid"] = "Труба жидкости пустоты",  -- TODO: Перевести
+    ["BuildCraft|Transport:pipeWire"] = "Красная проводка труб",  -- TODO: Перевести
+    ["BuildCraft|Transport:pipeGate"] = "Базовая заслонка",  -- TODO: Перевести
+    ["BuildCraft|Silicon:redstoneChipset"] = "Набор красного камня",  -- TODO: Перевести
+    ["BuildCraft|Robotics:redstone_board"] = "Плата красного камня",  -- TODO: Перевести
+    ["ThermalFoundation:bucket"] = "Ведро нестабильного красного камня",  -- TODO: Перевести
+    ["ThermalFoundation:material"] = "Пульверизированный уголь",  -- TODO: Перевести
+    ["ThermalFoundation:tool.hoeCopper"] = "Медная мотыга",  -- TODO: Перевести
+    ["ThermalFoundation:armor.plateNickel"] = "Ферритовая кираса",  -- TODO: Перевести
+    ["ThermalFoundation:tool.swordNickel"] = "Ферритовый меч",  -- TODO: Перевести
+    ["ThermalFoundation:armor.plateElectrum"] = "Электрумовая кираса",  -- TODO: Перевести
+    ["ThermalFoundation:tool.swordElectrum"] = "Электрумовый меч",  -- TODO: Перевести
+    ["ThermalFoundation:armor.plateInvar"] = "Инварная кираса",  -- TODO: Перевести
+    ["ThermalFoundation:tool.swordInvar"] = "Инварный меч",  -- TODO: Перевести
+    ["ThermalFoundation:tool.axeInvar"] = "Инварный топор",  -- TODO: Перевести
+    ["ThermalFoundation:armor.platePlatinum"] = "Блестящая кираса",  -- TODO: Перевести
+    ["ThermalFoundation:tool.swordPlatinum"] = "Блестящий меч",  -- TODO: Перевести
+    ["ThermalFoundation:tool.shearsPlatinum"] = "Блестящие ножницы",  -- TODO: Перевести
+    ["ThermalExpansion:wrench"] = "Молоток-серп",  -- TODO: Перевести
+    ["ThermalExpansion:meter"] = "Мультиметр",  -- TODO: Перевести
+    ["ThermalExpansion:capacitor"] = "Свинцовый флюс-конденсатор",  -- TODO: Перевести
+    ["ThermalExpansion:satchel"] = "Сумка",  -- TODO: Перевести
+    ["ThermalExpansion:diagram"] = "Красный чертёж",  -- TODO: Перевести
+    ["ThermalExpansion:material"] = "Пневматический сервопривод",  -- TODO: Перевести
+    ["ThermalExpansion:augment"] = "Улучшение: Интегрированный сервомеханизм",  -- TODO: Перевести
+    ["GraviSuite:advNanoChestPlate"] = "Продвинутый нанонагрудник",  -- TODO: Перевести
+    ["GraviSuite:ultimateLappack"] = "Ультимативный лаппак",  -- TODO: Перевести
+    ["GraviSuite:advLappack"] = "Продвинутый лаппак",  -- TODO: Перевести
+    ["GraviSuite:advJetpack"] = "Продвинутый электрический реактивный ранец",  -- TODO: Перевести
+    ["GraviSuite:vajra"] = "Ваджра",  -- TODO: Перевести
+    ["GraviSuite:graviTool"] = "ГравиИнструмент",  -- TODO: Перевести
+    ["GraviSuite:advDDrill"] = "Продвинутый алмазный бур",  -- TODO: Перевести
+    ["GraviSuite:advChainsaw"] = "Продвинутая бензопила",  -- TODO: Перевести
+    ["GraviSuite:relocator"] = "Переместитель",  -- TODO: Перевести
+    ["GraviSuite:itemSimpleItem"] = "Суперпроводящее покрытие",  -- TODO: Перевести
+    ["PowerUtils:pu_storage_module"] = "Модуль IC",  -- TODO: Перевести
+    ["DragonsRadioMod:DragonsRadioTuner"] = "Радиотюнер дракона",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemToolThermometer"] = "item.ItemToolThermometer.name",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemToolDigitalThermometer"] = "item.ItemToolDigitalThermometer.name",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemRemoteSensorKit"] = "item.ItemRemoteSensorKit.name",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemMultipleSensorKit"] = "item.ItemCounterSensorKit.name",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemMultipleSensorLocationCard"] = "item.itemCounterSensorLocationCard.name",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemUpgrade"] = "item.itemRangeUpgrade.name",  -- TODO: Перевести
+    ["IC2NuclearControl:ItemTextCard"] = "item.ItemTextCard.name",  -- TODO: Перевести
+    ["ProjRed|Core:projectred.core.part"] = "Белый иллюминий",  -- TODO: Перевести
+    ["customnpcs:npcDemonicIngot"] = "Демонический слиток",  -- TODO: Перевести
+    ["customnpcs:npcMoney"] = "Деньги",  -- TODO: Перевести
+    ["customnpcs:npcFireSpell"] = "Огненное заклинание",  -- TODO: Перевести
+    ["customnpcs:npcFireElement"] = "Огненный элемент",  -- TODO: Перевести
+    ["customnpcs:npcMithrilIngot"] = "Мифриловый слиток",  -- TODO: Перевести
+    ["customnpcs:npcWaterElement"] = "Водный элемент",  -- TODO: Перевести
+    ["customnpcs:npcDarkSpell"] = "Тёмное заклинание",  -- TODO: Перевести
+    ["customnpcs:npcRuby"] = "Рубин",  -- TODO: Перевести
+    ["customnpcs:npcIceSpell"] = "Ледяное заклинание",  -- TODO: Перевести
+    ["ThermalFoundation:tool.fishingRodDiamond"] = "Алмазная удочка",  -- TODO: Перевести
+    ["MineFactoryReloaded:spyglass"] = "Подзорная труба",  -- TODO: Перевести
+    ["MineFactoryReloaded:plastic.sheet"] = "Пластиковые листы",  -- TODO: Перевести
+    ["MineFactoryReloaded:plastic.raw"] = "Сырой пластик",  -- TODO: Перевести
+    ["MineFactoryReloaded:ceramicdye"] = "Керамическая краска (чёрная)",  -- TODO: Перевести
+    ["MineFactoryReloaded:plastic.boots"] = "Рубиновые тапочки Зельдо",  -- TODO: Перевести
+    ["MineFactoryReloaded:hammer"] = "Точная кувалда",  -- TODO: Перевести
+    ["MineFactoryReloaded:safarinet.singleuse"] = "Сафари-сеть (одноразовая)",  -- TODO: Перевести
+    ["MineFactoryReloaded:safarinet.launcher"] = "Запускатель сафари-сетей",  -- TODO: Перевести
+    ["MineFactoryReloaded:milkbottle"] = "Бутылка молока",  -- TODO: Перевести
+    ["MineFactoryReloaded:record.blank"] = "Чистая пластинка",  -- TODO: Перевести
+    ["MineFactoryReloaded:bucket.essence"] = "Ведро сущности",  -- TODO: Перевести
+    ["MineFactoryReloaded:bucket.pinkslime"] = "Ведро розовой слизи",  -- TODO: Перевести
+    ["MineFactoryReloaded:bucket.meat"] = "Ведро мяса",  -- TODO: Перевести
+    ["MineFactoryReloaded:bucket.sewage"] = "Ведро сточных вод",  -- TODO: Перевести
+    ["MineFactoryReloaded:upgrade.radius"] = "Улучшение (медное)",  -- TODO: Перевести
+    ["MineFactoryReloaded:safarinet.jailer"] = "Сафари-сеть тюремщика",  -- TODO: Перевести
+    ["MineFactoryReloaded:safarinet.reusable"] = "Сафари-сеть (многоразовая)",  -- TODO: Перевести
+    ["Ztones:diamondZane"] = "Алмазный Зейн",  -- TODO: Перевести
+    ["Ztones:ofanix"] = "Офаникс",  -- TODO: Перевести
+    ["ThermalDynamics:relay"] = "Реле красного камня",  -- TODO: Перевести
+    ["ThermalDynamics:servo"] = "Серво",  -- TODO: Перевести
+    ["ThermalDynamics:filter"] = "Фильтр",  -- TODO: Перевести
+    ["ThermalDynamics:retriever"] = "Извлекатель",  -- TODO: Перевести
+    ["ae2stuff:WirelessKit"] = "Комплект беспроводной установки",  -- TODO: Перевести
+    ["ae2stuff:Visualiser"] = "Инструмент визуализации сети",  -- TODO: Перевести
+    ["OpenBlocks:epicEraser"] = "Эпический ластик",  -- TODO: Перевести
+    ["OpenBlocks:filledbucket"] = "Ведро опыта",  -- TODO: Перевести
+    ["OpenBlocks:sonicglasses"] = "Звуковые очки",  -- TODO: Перевести
+    ["OpenBlocks:technicolorGlasses"] = "Удивительные техноцветные очки",  -- TODO: Перевести
+    ["dwcity:Flux_ingot"] = "item.Flux_ingot.name",  -- TODO: Перевести
+    ["dwcity:Dark_materia"] = "item.Dark_materia.name",  -- TODO: Перевести
+    ["dwcity:Dragon_shard"] = "item.Dragon_shard.name",  -- TODO: Перевести
+    ["dwcity:Powder8"] = "item.Powder8.name",  -- TODO: Перевести
+    ["dwcity:Powder7"] = "item.Powder7.name",  -- TODO: Перевести
+    ["dwcity:Powder6"] = "item.Powder6.name",  -- TODO: Перевести
+    ["dwcity:Cpu1"] = "item.Cpu1.name",  -- TODO: Перевести
+    ["dwcity:X8"] = "item.X8.name",  -- TODO: Перевести
+    ["dwcity:Amethyst"] = "item.Amethyst.name",  -- TODO: Перевести
+    ["dwcity:Realm_quantum"] = "item.Realm_quantum.name",  -- TODO: Перевести
+    ["dwcity:Dark_element"] = "item.Dark_element.name",  -- TODO: Перевести
+    ["dwcity:Granat"] = "item.Granat.name",  -- TODO: Перевести
+    ["dwcity:Sostav"] = "item.Sostav.name",  -- TODO: Перевести
+    ["dwcity:Powder2"] = "item.Powder2.name",  -- TODO: Перевести
+    ["dwcity:Pergament"] = "item.Pergament.name",  -- TODO: Перевести
+    ["dwcity:Powder1"] = "item.Powder1.name",  -- TODO: Перевести
+    ["dwcity:Live_materia"] = "item.Live_materia.name",  -- TODO: Перевести
+    ["dwcity:Rare_plan"] = "item.Rare_plan.name",  -- TODO: Перевести
+    ["dwcity:Vis_materia"] = "item.Vis_materia.name",  -- TODO: Перевести
+    ["dwcity:Knife"] = "item.Knife.name",  -- TODO: Перевести
+    ["dwcity:Topaz"] = "item.Topaz.name",  -- TODO: Перевести
+    ["dwcity:Sky_dust"] = "item.Sky_dust.name",  -- TODO: Перевести
+    ["dwcity:Vis_dust"] = "item.Vis_dust.name",  -- TODO: Перевести
+    ["dwcity:Fire_dust"] = "item.Fire_dust.name",  -- TODO: Перевести
+    ["dwcity:Fire_materia"] = "item.Fire_materia.name",  -- TODO: Перевести
+    ["dwcity:Dark_dust"] = "item.Dark_dust.name",  -- TODO: Перевести
+    ["dwcity:Enderium_plate2"] = "item.Enderium_plate2.name",  -- TODO: Перевести
+    ["dwcity:Dragon_iridium"] = "item.Dragon_iridium.name",  -- TODO: Перевести
+    ["dwcity:Powder13"] = "item.Powder13.name",  -- TODO: Перевести
+    ["dwcity:Powder11"] = "item.Powder11.name",  -- TODO: Перевести
+    ["dwcity:Iridium_ingot"] = "item.Iridium_ingot.name",  -- TODO: Перевести
+    ["dwcity:Dark_stone"] = "item.Dark_stone.name",  -- TODO: Перевести
+    ["dwcity:Sky_materia"] = "item.Sky_materia.name",  -- TODO: Перевести
+    ["dwcity:Malahit"] = "item.Malahit.name",  -- TODO: Перевести
+    ["dwcity:Epic_plan"] = "item.Epic_plan.name",  -- TODO: Перевести
+    ["dwcity:Quant_core"] = "item.Quant_core.name",  -- TODO: Перевести
+    ["dwcity:Gel"] = "item.Gel.name",  -- TODO: Перевести
+    ["dwcity:Demonic_ruby"] = "item.Demonic_ruby.name",  -- TODO: Перевести
+    ["dwcity:Akvamarin"] = "item.Akvamarin.name",  -- TODO: Перевести
+    ["dwcity:Circuit3"] = "item.Circuit3.name",  -- TODO: Перевести
+    ["dwcity:Circuit1"] = "item.Circuit1.name",  -- TODO: Перевести
+    ["dwcity:Circuit2"] = "item.Circuit2.name",  -- TODO: Перевести
+    ["dwcity:Ender_eye"] = "item.Ender_eye.name",  -- TODO: Перевести
+    ["dwcity:Flux_plate"] = "item.Flux_plate.name",  -- TODO: Перевести
+    ["dwcity:Basic_plan"] = "item.Basic_plan.name",  -- TODO: Перевести
+    ["dwcity:Tanzanit"] = "item.Tanzanit.name",  -- TODO: Перевести
+    ["dwcity:Materia"] = "item.Materia.name",  -- TODO: Перевести
+    ["dwcity:Outline"] = "item.Outline.name",  -- TODO: Перевести
+    ["dwcity:Flux_plate2"] = "item.Flux_plate2.name",  -- TODO: Перевести
+    ["dwcity:Enderium_plate"] = "item.Enderium_plate.name",  -- TODO: Перевести
+    ["dwcity:Quant_most"] = "item.Quant_most.name",  -- TODO: Перевести
+    ["OpenComputers:wrench"] = "Гайко-отвёртка",  -- TODO: Перевести
+    ["OpenComputers:eeprom"] = "ЭСППЗУ",  -- TODO: Перевести
+    ["OpenComputers:item"] = "Анализатор",  -- TODO: Перевести
+    ["DraconicEvolution:draconicPickaxe"] = "Драконий кирка",  -- TODO: Перевести
+    ["DraconicEvolution:draconicHelm"] = "Драконий шлем",  -- TODO: Перевести
+    ["DraconicEvolution:draconicShovel"] = "Драконий лопата",  -- TODO: Перевести
+    ["DraconicEvolution:draconiumIngot"] = "Слиток дракониума",  -- TODO: Перевести
+    ["DraconicEvolution:draconicSword"] = "Драконий меч",  -- TODO: Перевести
+    ["DraconicEvolution:draconicChest"] = "Драконий нагрудник",  -- TODO: Перевести
+    ["DraconicEvolution:teleporterMKI"] = "Амулет дисперсии",  -- TODO: Перевести
+    ["DraconicEvolution:draconiumDust"] = "Пыль дракониума",  -- TODO: Перевести
+    ["DraconicEvolution:draconicLeggs"] = "Драконий поножи",  -- TODO: Перевести
+    ["DraconicEvolution:wyvernCore"] = "Ядро виверны",  -- TODO: Перевести
+    ["DraconicEvolution:wyvernBow"] = "Лук виверны",  -- TODO: Перевести
+    ["DraconicEvolution:draconicHoe"] = "Драконий мотыга",  -- TODO: Перевести
+    ["DraconicEvolution:draconicDistructionStaff"] = "Драконий посох силы",  -- TODO: Перевести
+    ["DraconicEvolution:draconicBoots"] = "Драконий ботинки",  -- TODO: Перевести
+    ["DraconicEvolution:draconicAxe"] = "Драконий топор",  -- TODO: Перевести
+    ["DraconicEvolution:draconiumEnergyCore"] = "Энергоядро виверны",  -- TODO: Перевести
+    ["DraconicEvolution:wyvernSword"] = "Меч виверны",  -- TODO: Перевести
+    ["DraconicEvolution:dragonHeart"] = "Сердце дракона",  -- TODO: Перевести
+    ["DraconicEvolution:draconiumFluxCapacitor"] = "Флюс-конденсатор виверны",  -- TODO: Перевести
+    ["DraconicEvolution:wyvernShovel"] = "Лопата виверны",  -- TODO: Перевести
+    ["DraconicEvolution:draconicCore"] = "Ядро дракона",  -- TODO: Перевести
+    ["DraconicEvolution:awakenedCore"] = "Пробуждённое ядро",  -- TODO: Перевести
+    ["DraconicEvolution:wyvernPickaxe"] = "Кирка виверны",  -- TODO: Перевести
+    ["DraconicEvolution:draconicBow"] = "Драконий лук",  -- TODO: Перевести
+    ["DraconicEvolution:draconicIngot"] = "Слиток пробуждённого дракониума",  -- TODO: Перевести
+    ["DraconicEvolution:wyvernHelm"] = "Шлем виверны",  -- TODO: Перевести
+    ["dwcity:UrlPaintAnim"] = "item.UrlPaintAnim.name",  -- TODO: Перевести
+    ["dwcity:Amber"] = "item.Amber.name",  -- TODO: Перевести
+    ["dwcity:Efir_soul"] = "item.Efir_soul.name",  -- TODO: Перевести
+    ["dwcity:Cpu3"] = "item.Cpu3.name",  -- TODO: Перевести
+    ["dwcity:UrlPaint"] = "item.UrlPaint.name",  -- TODO: Перевести
+    ["dwcity:Rainbow"] = "item.Rainbow.name",  -- TODO: Перевести
+    ["dwcity:Item_info"] = "item.Item_info.name",  -- TODO: Перевести
+    ["dwcity:TrophyBox"] = "item.TrophyBox.name",  -- TODO: Перевести
+    ["dwcity:Dragon_plate"] = "item.Dragon_plate.name",  -- TODO: Перевести
+    ["dwcity:Quant_core2"] = "item.Quant_core2.name",  -- TODO: Перевести
+    ["dwcity:Dragon_plate2"] = "item.Dragon_plate2.name",  -- TODO: Перевести
+    ["dwcity:Dark_plate"] = "item.Dark_plate.name",  -- TODO: Перевести
+    ["dwcity:Vis_plate"] = "item.Vis_plate.name",  -- TODO: Перевести
+    ["dwcity:Legend_plan"] = "item.Legend_plan.name",  -- TODO: Перевести
+    ["dwcity:Ice_plate"] = "item.Ice_plate.name",  -- TODO: Перевести
+    ["dwcity:Thorium_plate"] = "item.Thorium_plate.name",  -- TODO: Перевести
+    ["dwcity:Thorium_plate2"] = "item.Thorium_plate2.name",  -- TODO: Перевести
+    ["dwcity:Thorium_ingot"] = "item.Thorium_ingot.name",  -- TODO: Перевести
+    ["dwcity:Armor_seal2"] = "item.Armor_seal2.name",  -- TODO: Перевести
+    ["dwcity:Dnk_seal"] = "item.Dnk_seal.name",  -- TODO: Перевести
+    ["dwcity:Chip_32bit"] = "item.Chip_32bit.name",  -- TODO: Перевести
+    ["dwcity:Module_seal2"] = "item.Module_seal2.name",  -- TODO: Перевести
+    ["dwcity:Flower_seal2"] = "item.Flower_seal2.name",  -- TODO: Перевести
+    ["dwcity:Flux_seal2"] = "item.Flux_seal2.name",  -- TODO: Перевести
+    ["dwcity:Chip_64bit"] = "item.Chip_64bit.name",  -- TODO: Перевести
+    ["dwcity:Machine_seal2"] = "item.Machine_seal2.name",  -- TODO: Перевести
+    ["dwcity:Lamp_seal"] = "item.Lamp_seal.name",  -- TODO: Перевести
+    ["dwcity:Optic_seal"] = "item.Optic_seal.name",  -- TODO: Перевести
+    ["dwcity:Bee_seal2"] = "item.Bee_seal2.name",  -- TODO: Перевести
+    ["dwcity:Splitter_dust"] = "item.Splitter_dust.name",  -- TODO: Перевести
+    ["dwcity:Dragon_seal2"] = "item.Dragon_seal2.name",  -- TODO: Перевести
+    ["dwcity:Nano_seal"] = "item.Nano_seal.name",  -- TODO: Перевести
+    ["dwcity:Sword_seal2"] = "item.Sword_seal2.name",  -- TODO: Перевести
+    ["dwcity:Chest_seal2"] = "item.Chest_seal2.name",  -- TODO: Перевести
+    ["dwcity:Ore_seal"] = "item.Ore_seal.name",  -- TODO: Перевести
+    ["dwcity:Energy_seal"] = "item.Energy_seal.name",  -- TODO: Перевести
+    ["dwcity:Outline2"] = "item.Outline2.name",  -- TODO: Перевести
+    ["dwcity:Farm_seal2"] = "item.Farm_seal2.name",  -- TODO: Перевести
+    ["dwcity:Laser_seal2"] = "item.Laser_seal2.name",  -- TODO: Перевести
+    ["dwcity:High_technology_seal_seal"] = "item.High_technology_seal_seal.name",  -- TODO: Перевести
+    ["dwcity:Food_seal2"] = "item.Food_seal2.name",  -- TODO: Перевести
+    ["dwcity:Liquid_seal2"] = "item.Liquid_seal2.name",  -- TODO: Перевести
+    ["dwcity:Lamp_seal2"] = "item.Lamp_seal2.name",  -- TODO: Перевести
+    ["dwcity:Laser_seal"] = "item.Laser_seal.name",  -- TODO: Перевести
+    ["dwcity:Sword_seal"] = "item.Sword_seal.name",  -- TODO: Перевести
+    ["dwcity:Armor_seal"] = "item.Armor_seal.name",  -- TODO: Перевести
+    ["dwcity:Dragon_seal"] = "item.Dragon_seal.name",  -- TODO: Перевести
+    ["dwcity:UV_glasses"] = "item.UV_glasses.name",  -- TODO: Перевести
+    ["dwcity:Nano_seal2"] = "item.Nano_seal2.name",  -- TODO: Перевести
+    ["dwcity:Ore_seal2"] = "item.Ore_seal2.name",  -- TODO: Перевести
+    ["dwcity:Energy_seal2"] = "item.Energy_seal2.name",  -- TODO: Перевести
+    ["dwcity:Radio_seal"] = "item.Radio_seal.name",  -- TODO: Перевести
+    ["dwcity:Chip_16bit"] = "item.Chip_16bit.name",  -- TODO: Перевести
+    ["dwcity:Dnk_seal2"] = "item.Dnk_seal2.name",  -- TODO: Перевести
+    ["dwcity:Potion_seal"] = "item.Potion_seal.name",  -- TODO: Перевести
+    ["dwcity:Machine_seal"] = "item.Machine_seal.name",  -- TODO: Перевести
+    ["dwcity:Liquid_seal"] = "item.Liquid_seal.name",  -- TODO: Перевести
+    ["dwcity:Power_seal"] = "item.Power_seal.name",  -- TODO: Перевести
+    ["dwcity:Flux_seal"] = "item.Flux_seal.name",  -- TODO: Перевести
+    ["dwcity:Cube_seal2"] = "item.Cube_seal2.name",  -- TODO: Перевести
+    ["dwcity:Death_seal"] = "item.Death_seal.name",  -- TODO: Перевести
+    ["dwcity:Grass_seal2"] = "item.Grass_seal2.name",  -- TODO: Перевести
+    ["dwcity:High_technology_seal_seal2"] = "item.High_technology_seal_seal2.name",  -- TODO: Перевести
+    ["dwcity:Optic_seal2"] = "item.Optic_seal2.name",  -- TODO: Перевести
+    ["dwcity:Potion_seal2"] = "item.Potion_seal2.name",  -- TODO: Перевести
+    ["dwcity:Radio_seal2"] = "item.Radio_seal2.name",  -- TODO: Перевести
+    ["dwcity:Food_seal"] = "item.Food_seal.name",  -- TODO: Перевести
+    ["dwcity:Chest_seal"] = "item.Chest_seal.name",  -- TODO: Перевести
+    ["dwcity:Cube_seal"] = "item.Cube_seal.name",  -- TODO: Перевести
+    ["dwcity:Grass_seal"] = "item.Grass_seal.name",  -- TODO: Перевести
+    ["dwcity:Bee_seal"] = "item.Bee_seal.name",  -- TODO: Перевести
+    ["dwcity:Module_seal"] = "item.Module_seal.name",  -- TODO: Перевести
+    ["dwcity:Death_seal2"] = "item.Death_seal2.name",  -- TODO: Перевести
+    ["dwcity:Flower_seal"] = "item.Flower_seal.name",  -- TODO: Перевести
+    ["dwcity:Farm_seal"] = "item.Farm_seal.name",  -- TODO: Перевести
+    ["dwcity:Power_seal2"] = "item.Power_seal2.name",  -- TODO: Перевести
+    ["dwcity:Dark_spirit2"] = "item.Dark_spirit2.name",  -- TODO: Перевести
+    ["dwcity:ColdDragonHeart"] = "item.ColdDragonHeart.name",  -- TODO: Перевести
+    ["dwcity:Ice_stone"] = "item.Ice_stone.name",  -- TODO: Перевести
+    ["dwcity:ReactorVentSinal"] = "item.ReactorVentSinal.name",  -- TODO: Перевести
+    ["dwcity:ReactorPalladiumSimple"] = "item.ReactorPalladiumSimple.name",  -- TODO: Перевести
+    ["dwcity:ReactorHeatSwitchDraconic"] = "item.ReactorHeatSwitchDraconic.name",  -- TODO: Перевести
+    ["dwcity:ReactorHeatSwitchThorium"] = "item.ReactorHeatSwitchThorium.name",  -- TODO: Перевести
+    ["dwcity:ReactorNeptuniumSimple"] = "item.ReactorNeptuniumSimple.name",  -- TODO: Перевести
+    ["dwcity:ReactorVentThorium"] = "item.ReactorVentThorium.name",  -- TODO: Перевести
+    ["dwcity:DragonScales"] = "item.DragonScales.name",  -- TODO: Перевести
+    ["dwcity:ReactorNeptuniumQuad"] = "item.ReactorNeptuniumQuad.name",  -- TODO: Перевести
+    ["dwcity:ReactorPalladiumQuad"] = "item.ReactorPalladiumQuad.name",  -- TODO: Перевести
+    ["dwcity:SmallPalladium"] = "item.SmallPalladium.name",  -- TODO: Перевести
+    ["dwcity:SmallNeptunium"] = "item.SmallNeptunium.name",  -- TODO: Перевести
+    ["extracells:storage.physical"] = "МЭ 1024k хранилище",  -- TODO: Перевести
+    ["extracells:part.base"] = "Шина хранения жидкостей МЭ",  -- TODO: Перевести
+    ["extracells:storage.component"] = "256k компонент хранилища МЭ",  -- TODO: Перевести
+    ["extracells:pattern.fluid"] = "Шаблон жидкости МЭ [WIP]",  -- TODO: Перевести
+    ["extracells:storage.fluid"] = "МЭ 1k хранилище жидкостей",  -- TODO: Перевести
+    ["extracells:terminal.universal.wireless"] = "Беспроводной универсальный терминал",  -- TODO: Перевести
+    ["CarpentersBlocks:itemCarpentersChisel"] = "Столярное долото",  -- TODO: Перевести
+    ["chisel:chisel"] = "Долото",  -- TODO: Перевести
+    ["CarpentersBlocks:itemCarpentersHammer"] = "Столярный молоток",  -- TODO: Перевести
+    ["GraviSuite:advancedQuantumHelmet"] = "Продвинутый квантовый шлем",  -- TODO: Перевести
+    ["GraviSuite:advancedNightvisionGoggles"] = "Продвинутые очки ночного видения",  -- TODO: Перевести
+    ["dwcity:Dragon_plate3"] = "item.Dragon_plate3.name",  -- TODO: Перевести
+    ["dwcity:Dragon_plate4"] = "item.Dragon_plate4.name",  -- TODO: Перевести
+    ["EnderIO:itemPowerConduit"] = "Энергоканал",  -- TODO: Перевести
+    ["EnderIO:item.darkSteel_sword"] = "Эндер",  -- TODO: Перевести
+    ["EnderIO:itemYetaWrench"] = "Ключ Йеты",  -- TODO: Перевести
+    ["EnderIO:itemMachinePart"] = "Шасси машины",  -- TODO: Перевести
+    ["EnderIO:itemConduitFacade"] = "Фасад канала",  -- TODO: Перевести
+    ["EnderIO:itemBrokenSpawner"] = "Сломанный спавнер",  -- TODO: Перевести
+    ["EnderIO:itemExtractSpeedUpgrade"] = "Ускорение канала предметов",  -- TODO: Перевести
+    ["EnderIO:itemBasicCapacitor"] = "Базовый конденсатор",  -- TODO: Перевести
+    ["EnderIO:itemCoordSelector"] = "Селектор координат",  -- TODO: Перевести
+    ["EnderIO:itemItemConduit"] = "Канал предметов",  -- TODO: Перевести
+    ["EnderIO:itemConduitProbe"] = "Зонд канала",  -- TODO: Перевести
+    ["EnderIO:itemFunctionUpgrade"] = "Улучшение дистанционного контроля",  -- TODO: Перевести
+    ["EnderIO:itemMEConduit"] = "Канал МЭ",  -- TODO: Перевести
+    ["EnderIO:itemMaterial"] = "Кремний",  -- TODO: Перевести
+    ["EnderIO:itemBasicFilterUpgrade"] = "Базовый фильтр предметов",  -- TODO: Перевести
+    ["EnderIO:itemFrankenSkull"] = "Z-логический контроллер",  -- TODO: Перевести
+    ["EnderIO:bucketNutrient_distillation"] = "Ведро питательной дистилляции",  -- TODO: Перевести
+    ["EnderIO:item.darkSteel_helmet"] = "Тёмный шлем",  -- TODO: Перевести
+    ["EnderIO:itemSoulVessel"] = "Фиал душ",  -- TODO: Перевести
+    ["EnderIO:itemLiquidConduit"] = "Эндер канал жидкости",  -- TODO: Перевести
+    ["EnderIO:itemPowderIngot"] = "Порошок жемчуга Края",  -- TODO: Перевести
+    ["EnderIO:itemAlloy"] = "Электросталь",  -- TODO: Перевести
+    ["EnderIO:itemRedstoneConduit"] = "Канал красного камня",  -- TODO: Перевести
+    ["dwcity:Quant_core4"] = "item.Quant_core4.name",  -- TODO: Перевести
+    ["dwcity:Quant_core3"] = "item.Quant_core3.name",  -- TODO: Перевести
+    ["dwcity:Quant_core6"] = "item.Quant_core6.name",  -- TODO: Перевести
+    ["dwcity:Quant_core5"] = "item.Quant_core5.name",  -- TODO: Перевести
+    ["dwcity:FortuneModule"] = "item.FortuneModule_0.name",  -- TODO: Перевести
+    ["dwcity:Quant_core8"] = "item.Quant_core8.name",  -- TODO: Перевести
+    ["dwcity:Quant_core7"] = "item.Quant_core7.name",  -- TODO: Перевести
+    ["dwcity:Dominant_crystal"] = "item.Dominant_crystal.name",  -- TODO: Перевести
+    ["dwcity:Scattering_crystal"] = "item.Scattering_crystal.name",  -- TODO: Перевести
+    ["dwcity:EtherealStaff"] = "item.EtherealStaff.name",  -- TODO: Перевести
+    ["dwcity:ShardAmethyst"] = "§8Осколок души",  -- TODO: Перевести
+    ["DwQuests:StarAtlas"] = "item.StarAtlas.name",  -- TODO: Перевести
+    ["DwQuests:Gift"] = "§r§aЭксклюзивные цветочки",  -- TODO: Перевести
+    ["LFEnderAdditions:itemItemConduit"] = "Продвинутый канал предметов",  -- TODO: Перевести
+    ["ae2wct:infinityBoosterCard"] = "Карта бесконечного ускорителя",  -- TODO: Перевести
+    ["luxinfineitems:AEEncodedExtendedPattern"] = "Расширенный шаблон (закодированный)",  -- TODO: Перевести
+    ["luxinfineitems:TEAugment"] = "Улучшение: Фазовый резонатор",  -- TODO: Перевести
+    ["luxinfineitems:AECompressedSpeedCard"] = "Продвинутая карта ускорения",  -- TODO: Перевести
+    ["ae2wct:wirelessCraftingTerminal"] = "Беспроводной верстак",  -- TODO: Перевести
+    ["luxinfineitems:advanced_portable_storage_cell_2"] = "Ультимативная портативная ячейка",  -- TODO: Перевести
+    ["luxinfineitems:advanced_portable_storage_cell_1"] = "Гибридная портативная ячейка",  -- TODO: Перевести
+    ["luxinfineitems:advanced_portable_storage_cell_0"] = "Продвинутая портативная ячейка",  -- TODO: Перевести
+    ["ae2stuff:Cable"] = "Продвинутый кабель МЭ - Fluix",  -- TODO: Перевести
+    ["LFEnderAdditions:itemAdvLiquidConduit"] = "Мелодичный флюидопровод",  -- TODO: Перевести
+    ["luxinfineitems:AEExtendedPattern"] = "Расширенный шаблон",  -- TODO: Перевести
+    ["etfuturum:sweet_berries"] = "Сладкие ягоды",  -- TODO: Перевести
+    ["metadrive:neptunium_condensator"] = "item.neptunium_condensator.name",  -- TODO: Перевести
+    ["jgendustry:BeeReceptacle"] = "Ёмкость для пчёл",  -- TODO: Перевести
+    ["etfuturum:mutton_cooked"] = "Жареная баранина",  -- TODO: Перевести
+    ["jgendustry:GeneTemplate"] = "Генетический шаблон",  -- TODO: Перевести
+    ["metadrive:palladium_condensator"] = "item.palladium_condensator.name",  -- TODO: Перевести
+    ["jgendustry:PowerModule"] = "Энергомодуль",  -- TODO: Перевести
+    ["etfuturum:item_sign_jungle"] = "Табличка из тропического дерева",  -- TODO: Перевести
+    ["jgendustry:GeneSampleBlank"] = "Пустой генный образец",  -- TODO: Перевести
+    ["etfuturum:chorus_fruit"] = "Плод коруса",  -- TODO: Перевести
+    ["jgendustry:MutagenTank"] = "Бак мутагена",  -- TODO: Перевести
+    ["jgendustry:GeneticsProcessor"] = "Генетический процессор",  -- TODO: Перевести
+    ["etfuturum:mutton_raw"] = "Сырая баранина",  -- TODO: Перевести
+    ["jgendustry:Labware"] = "Лабораторная посуда для генетики",  -- TODO: Перевести
+}
+
+-- Загрузка/сохранение конфигурации
+local function loadConfig()
+    if fs.exists(SHOP_CONFIG_PATH) then
+        local file = io.open(SHOP_CONFIG_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        return serialization.unserialize(data) or defaultConfig
+    end
+    return defaultConfig
+end
+
+local function saveConfig(config)
+    local file = io.open(SHOP_CONFIG_PATH, "w")
+    file:write(serialization.serialize(config))
+    file:close()
+end
+
+-- Балансы игроков
+local function loadBalances()
+    if fs.exists(BALANCES_PATH) then
+        local file = io.open(BALANCES_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        return serialization.unserialize(data) or {}
+    end
+    return {}
+end
+
+local function saveBalances(balances)
+    local file = io.open(BALANCES_PATH, "w")
+    file:write(serialization.serialize(balances))
+    file:close()
+end
+
+-- Загрузка переводов названий предметов
+local translations = {}
+local function loadTranslations()
+    if fs.exists(TRANSLATE_PATH) then
+        local file = io.open(TRANSLATE_PATH, "r")
+        for line in file:lines() do
+            local key, value = line:match("^([^=]+)=(.+)$")
+            if key and value then
+                translations[key] = value
+            end
+        end
+        file:close()
+    end
+end
+
+-- Сохранение переводов
+local function saveTranslations()
+    local file = io.open(TRANSLATE_PATH, "w")
+    for key, value in pairs(translations) do
+        file:write(key .. "=" .. value .. "\n")
+    end
+    file:close()
+end
+
+-- Инициализация переводов
+loadTranslations()
+
+-- Вспомогательная функция для подсчета размера таблицы
+local function table_size(t)
+    if not t then return 0 end
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+    return count
+end
+
+-- Получение информации о предмете с кэшированием и переводами
+local itemInfoCache = {}
+local function getItemInfo(itemKey)
+    if not itemKey then return {label = "Неизвестный предмет", name = "unknown", damage = 0} end
+    
+    -- Используем кэш, чтобы не запрашивать информацию многократно
+    if itemInfoCache[itemKey] then
+        return itemInfoCache[itemKey]
+    end
+    
+    -- Проверяем наличие перевода
+    if translations[itemKey] then
+        itemInfoCache[itemKey] = {
+            label = translations[itemKey],
+            name = itemKey:match("^([^:]+)") or itemKey,
+            damage = tonumber(itemKey:match(":([^:]+)$")) or 0
+        }
+        return itemInfoCache[itemKey]
+    end
+    
+    local parts = {}
+    for part in itemKey:gmatch("[^:]+") do
+        table.insert(parts, part)
+    end
+    
+    if #parts < 2 then
+        itemInfoCache[itemKey] = {label = "Неизвестный предмет", name = "unknown", damage = 0}
+        return itemInfoCache[itemKey]
+    end
+    
+    local itemID = parts[1]
+    local itemDmg = tonumber(parts[2]) or 0
+    
+    local success, itemInfo = pcall(me.getItemDetail, {name = itemID, damage = itemDmg})
+    if success and itemInfo then
+        itemInfo.label = itemInfo.label or itemID
+        itemInfoCache[itemKey] = itemInfo
+        return itemInfo
+    end
+    
+    -- Если не удалось получить информацию, создаем базовую
+    itemInfoCache[itemKey] = {
+        label = itemID:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        name = itemID,
+        damage = itemDmg
+    }
+    
+    return itemInfoCache[itemKey]
+end
+
+-- Получение количества предмета в системе ME
+local function getItemQuantity(itemKey)
+    local itemInfo = getItemInfo(itemKey)
+    local success, detail = pcall(me.getItemDetail, {name = itemInfo.name, damage = itemInfo.damage})
+    if success and detail then
+        return detail.qty or 0
+    end
+    return 0
+end
+
+-- Переменные состояния
+local config = loadConfig()
+local balances = loadBalances()
+local currentPlayer = nil
+local playerBalance = 0
+local shopItems = {}
+local state = "MAIN" -- MAIN, BUY, SELL, ADMIN, GOODBYE
+local page = 1
+local itemsPerPage = 8
+local editingItem = nil -- Редактируемый предмет
+local priceBuffer = "" -- Буфер для ввода цены
+local lastUpdateTime = 0
+local goodbyeTimer = 0
+
+-- Для управления количеством покупки
+local quantitySelections = {} -- {itemKey = selectedQuantity}
+
+-- Глобальные настройки GPU
+local defBG, defFG = 0x000000, 0xFFFFFF
+gpu.setBackground(defBG)
+gpu.setForeground(defFG)
+gpu.fill(1, 1, w, h, " ")
+
+-- Утилиты
+local function formatNumber(num)
+    if not num then return "0" end
+    if num < 1000 then
+        return tostring(math.floor(num))
+    end
+    
+    local symbols = {"", "K", "M", "B", "T"}
+    local formattedNum = num
+    local symbolIndex = 1
+
+    while formattedNum >= 1000 and symbolIndex < #symbols do
+        formattedNum = formattedNum / 1000
+        symbolIndex = symbolIndex + 1
+    end
+
+    if symbolIndex > 1 then
+        return string.format("%.1f%s", formattedNum, symbols[symbolIndex])
+    end
+
+    return tostring(math.floor(num))
+end
+
+local function center(y, text, color)
+    if not text then return end
+    color = color or defFG
+    gpu.setForeground(color)
+    local x = math.floor((w - unicode.len(text)) / 2)
+    gpu.set(x, y, text)
+    gpu.setForeground(defFG)
+end
+
+local function drawButton(x, y, width, height, text, bgColor, fgColor)
+    if not text then return end
+    local bg = bgColor or 0x333333
+    local fg = fgColor or 0xFFFFFF
+    
+    gpu.setBackground(bg)
+    gpu.setForeground(fg)
+    gpu.fill(x, y, width, height, " ")
+    local textX = x + math.floor((width - unicode.len(text)) / 2)
+    local textY = y + math.floor(height/2)
+    gpu.set(textX, textY, text)
+    gpu.setBackground(defBG)
+    gpu.setForeground(defFG)
+    return x, y, x + width - 1, y + height - 1
+end
+
+-- Функция для отображения логотипа
+local function drawLogo()
+    -- Отображение надписи FAFASTORE
+    local topLines = {}
+    for line in logoTop:gmatch("[^\n]+") do
+        table.insert(topLines, line)
+    end
+    
+    local topStartY = 4
+    for i, line in ipairs(topLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x1E90FF) -- Синий (DodgerBlue)
+        gpu.set(x, topStartY + i - 1, line)
+    end
+    
+    -- Отображение надписи mcskill
+    local bottomLines = {}
+    for line in logoBottom:gmatch("[^\n]+") do
+        table.insert(bottomLines, line)
+    end
+    
+    local bottomStartY = topStartY + #topLines
+    for i, line in ipairs(bottomLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x9370DB) -- Фиолетовый
+        gpu.set(x, bottomStartY + i - 1, line)
+    end
+    
+    gpu.setForeground(defFG)
+end
+
+-- Отрисовка экрана прощания
+local function drawGoodbyeScreen()
+    gpu.fill(1, 1, w, h, " ")
+    
+    local heart = {
+        "    ██    ██    ",
+        "   ████  ████   ",
+        "  ███████████  ",
+        "  ███████████  ",
+        "   █████████   ",
+        "    ███████    ",
+        "     █████     ",
+        "      ███      ",
+        "       █       "
+    }
+    
+    local heartHeight = #heart
+    local startY = math.floor(h/2) - heartHeight - 3
+    
+    for i, line in ipairs(heart) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0xFF69B4) -- Ярко-розовый
+        gpu.set(x, startY + i, line)
+    end
+    
+    gpu.setForeground(0xFFFFFF)
+    center(startY + heartHeight + 2, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
+    
+    local remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
+    center(startY + heartHeight + 4, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
+end
+
+-- Отрисовка интерфейса
+local function drawMainScreen()
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "МАГАЗИН FAFASTORE", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    -- Логотип
+    drawLogo()
+    
+    -- Кнопки
+    local centerX = math.floor(w/2)
+    drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0xF5DEB3, 0x000000)
+    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0xF5DEB3, 0x000000)
+    
+    -- Авторы магазина
+    center(20, "Авторы магазина: fafagod1k и другие", 0xAAAAAA)
+    
+    -- Кнопка администрирования
+    drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h, "Стоя на PIM, используйте сенсорный экран или клавиши 1-3")
+end
+
+local function drawBuyScreen()
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    -- Кнопка обновления информации
+    drawButton(w - 20, 1, 10, 1, "Обновить", 0x555555, 0xFFFFFF)
+    
+    gpu.setBackground(defBG)
+    
+    -- Список товаров
+    shopItems = {}
+    for itemKey, price in pairs(config.items) do
+        table.insert(shopItems, {
+            key = itemKey, 
+            price = price,
+            quantity = getItemQuantity(itemKey)
+        })
+    end
+    
+    -- Сортировка по названию
+    table.sort(shopItems, function(a, b) 
+        local infoA = getItemInfo(a.key)
+        local infoB = getItemInfo(b.key)
+        return (infoA.label or "ZZZ") < (infoB.label or "ZZZ")
+    end)
+    
+    local startY = 3
+    local startIdx = (page - 1) * itemsPerPage + 1
+    
+    for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
+        local item = shopItems[i]
+        local itemInfo = getItemInfo(item.key)
+        local yPos = startY + (i - startIdx) * 2
+        
+        -- Отображение предмета
+        gpu.setForeground(0xFFFFFF)
+        gpu.set(3, yPos, itemInfo.label or "Неизвестный предмет")
+        
+        -- Цена и количество
+        gpu.setForeground(0x00FF00)
+        gpu.set(40, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
+        gpu.set(60, yPos, "В наличии: " .. formatNumber(item.quantity))
+        
+        -- Выбранное количество
+        local selectedQty = quantitySelections[item.key] or 1
+        gpu.setForeground(0xFFFF00)
+        gpu.set(70, yPos, "Купить: " .. selectedQty)
+        
+        -- Кнопки управления количеством
+        local minusBtn = drawButton(78, yPos, 2, 1, "-", 0x555555, 0xFFFFFF)
+        local plusBtn = drawButton(81, yPos, 2, 1, "+", 0x555555, 0xFFFFFF)
+        
+        -- Кнопка покупки
+        local buyBtn = drawButton(84, yPos, 6, 1, "Купить", 0x00AA00, 0xFFFFFF)
+        
+        -- Сохраняем координаты кнопок
+        shopItems[i].buttons = {
+            minus = minusBtn,
+            plus = plusBtn,
+            buy = buyBtn
+        }
+    end
+    
+    -- Навигация
+    if page > 1 then
+        drawButton(5, h - 2, 10, 1, "< Назад", 0xF5DEB3, 0x000000)
+    end
+    
+    if #shopItems > page * itemsPerPage then
+        drawButton(w - 15, h - 2, 10, 1, "Вперед >", 0xF5DEB3, 0x000000)
+    end
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    
+    -- Отображение поля ввода для редактирования
+    if editingItem then
+        gpu.setBackground(0x333333)
+        gpu.setForeground(0xFFFFFF)
+        gpu.fill(30, h - 2, 20, 1, " ")
+        gpu.set(30, h - 2, "Цена: " .. priceBuffer)
+        gpu.setBackground(defBG)
+        
+        center(h - 1, "Введите новую цену и нажмите Enter", 0xFFFF00)
+    end
+end
+
+local function drawSellScreen()
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ПРОДАЖА ПРЕДМЕТОВ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    gpu.setBackground(defBG)
+    
+    gpu.setForeground(0xFFFF00)
+    center(3, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    center(5, "Положите предметы для продажи в инвентарь", 0xAAAAAA)
+    center(6, "и нажмите 'Продать все'", 0xAAAAAA)
+    
+    -- Кнопки
+    drawButton(30, 8, 20, 3, "Продать все", 0xF5DEB3, 0x000000)
+    
+    -- Список покупаемых предметов
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 12, "Магазин покупает:")
+    
+    local yPos = 14
+    for itemKey, price in pairs(config.sellItems) do
+        local itemInfo = getItemInfo(itemKey)
+        
+        gpu.setForeground(0xFFFFFF)
+        gpu.set(5, yPos, "- " .. (itemInfo.label or "Неизвестный предмет"))
+        gpu.setForeground(0xFFFF00)
+        gpu.set(40, yPos, "Цена: " .. formatNumber(price) .. " " .. CURRENCY_NAME .. " за шт.")
+        
+        yPos = yPos + 1
+        if yPos > h - 3 then break end
+    end
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+local function drawAdminPanel()
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    gpu.setBackground(defBG)
+    
+    gpu.setForeground(0xFF00FF)
+    center(3, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
+    
+    -- Кнопки
+    drawButton(5, 5, 25, 3, "Добавить для продажи", 0xF5DEB3, 0x000000)
+    drawButton(35, 5, 30, 3, "Добавить для покупки", 0xF5DEB3, 0x000000)
+    
+    -- Функции
+    drawButton(5, 9, 25, 3, "Сохранить конфиг", 0xF5DEB3, 0x000000)
+    drawButton(35, 9, 25, 3, "Сохранить переводы", 0xF5DEB3, 0x000000)
+    
+    -- Статистика
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 13, "Статистика магазина:")
+    
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(5, 15, "Товаров в каталоге: " .. table_size(config.items or {}))
+    gpu.set(5, 16, "Предметов для покупки: " .. table_size(config.sellItems or {}))
+    gpu.set(5, 17, "Последнее обновление: " .. os.date("%H:%M:%S", lastUpdateTime))
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    center(h - 1, "Для добавления предметов возьмите их в руку и нажмите кнопку", 0xAAAAAA)
+end
+
+-- Логика магазина
+local function buyItem(itemKey, price, quantity)
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local totalPrice = price * quantity
+    
+    if playerBalance < totalPrice then
+        center(h - 1, "Недостаточно средств!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    local itemInfo = getItemInfo(itemKey)
+    
+    -- Проверка наличия в ME
+    local available = getItemQuantity(itemKey)
+    if available < quantity then
+        center(h - 1, "Недостаточно товара в наличии!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    -- Выдача предмета
+    local success = me.exportItem({name = itemInfo.name, damage = itemInfo.damage}, "UP", quantity)
+    if success and success.size == quantity then
+        playerBalance = playerBalance - totalPrice
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        
+        local itemLabel = itemInfo.label or "предмет"
+        center(h - 1, "Покупка успешна: " .. quantity .. " x " .. itemLabel, 0x00FF00)
+        computer.beep(2000, 0.2)
+        
+        -- Обновляем информацию о количестве
+        for i, item in ipairs(shopItems) do
+            if item.key == itemKey then
+                item.quantity = item.quantity - quantity
+                break
+            end
+        end
+        
+        return true
+    end
+    
+    center(h - 1, "Ошибка выдачи предмета!", 0xFF0000)
+    computer.beep(1000, 0.5)
+    return false
+end
+
+local function sellItems()
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    if pim.getInventoryName() ~= "pim" then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local totalEarned = 0
+    local itemsSold = 0
+    local inventory = pim.getAllStacks(0)
+    
+    for slot, item in pairs(inventory) do
+        if item then
+            local dmg = item.dmg or 0
+            local itemKey = item.id .. ":" .. dmg
+            local sellPrice = config.sellItems[itemKey]
+            
+            if sellPrice then
+                local amountToSell = item.qty
+                local earned = amountToSell * sellPrice
+                
+                -- Изъятие предметов у игрока
+                pim.pushItem("DOWN", slot, amountToSell)
+                
+                -- Начисление средств
+                playerBalance = playerBalance + earned
+                totalEarned = totalEarned + earned
+                itemsSold = itemsSold + amountToSell
+            end
+        end
+    end
+    
+    if itemsSold > 0 then
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        center(h - 1, string.format("Продано %d предметов на сумму %d %s", 
+               itemsSold, totalEarned, CURRENCY_NAME), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(h - 1, "Нет предметов для продажи!", 0xFFFF00)
+    return false
+end
+
+local function addItemToConfig(isSellItem)
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return
+    end
+    
+    -- Проверка прав администратора
+    local isAdmin = false
+    for _, admin in ipairs(ADMIN_USERS) do
+        if admin == currentPlayer then
+            isAdmin = true
+            break
+        end
+    end
+    
+    if not isAdmin then
+        center(h - 1, "Доступ запрещен!", 0xFF0000)
+        return
+    end
+    
+    -- Получаем предмет в руке
+    local item = nil
+    local inventory = pim.getAllStacks(0)
+    for slot, stack in pairs(inventory) do
+        if stack and stack.id and slot == 0 then
+            item = stack
+            break
+        end
+    end
+    
+    if not item or not item.id then
+        center(h - 1, "Возьмите предмет в руку и попробуйте снова!", 0xFF0000)
+        return
+    end
+    
+    local dmg = item.dmg or 0
+    local itemKey = item.id .. ":" .. dmg
+    local price = 10 -- Цена по умолчанию
+    
+    local itemInfo = getItemInfo(itemKey)
+    
+    if isSellItem then
+        config.sellItems[itemKey] = price
+        center(h - 1, "Предмет добавлен для покупки: " .. (itemInfo.label or "предмет"), 0x00FF00)
+    else
+        config.items[itemKey] = price
+        center(h - 1, "Предмет добавлен для продажи: " .. (itemInfo.label or "предмет"), 0x00FF00)
+    end
+    
+    saveConfig(config)
+end
+
+-- Обработка событий
+local function handleEvent(eventName, ...)
+    local args = {...}
+    
+    if eventName == "interrupted" then
+        gpu.setBackground(defBG)
+        gpu.setForeground(defFG)
+        gpu.fill(1, 1, w, h, " ")
+        os.exit()
+        return true
+    end
+    
+    -- Вход/выход игрока
+    if eventName == "player_on" then
+        currentPlayer = args[1]
+        playerBalance = balances[currentPlayer] or 0
+        state = "MAIN"
+        drawMainScreen()
+    elseif eventName == "player_off" then
+        state = "GOODBYE"
+        goodbyeTimer = computer.uptime()
+        drawGoodbyeScreen()
+    end
+    
+    -- Обработка касаний
+    if eventName == "touch" and currentPlayer then
+        local _, x, y, button = ...
+        
+        -- Главный экран
+        if state == "MAIN" then
+            local centerX = math.floor(w/2)
+            if y >= 16 and y <= 18 then
+                if x >= centerX - 35 and x <= centerX - 5 then
+                    state = "BUY"
+                    page = 1
+                    quantitySelections = {}
+                    drawBuyScreen()
+                elseif x >= centerX + 5 and x <= centerX + 35 then
+                    state = "SELL"
+                    drawSellScreen()
+                end
+            end
+            
+            if y == h and x >= w - 15 and x <= w then
+                state = "ADMIN"
+                drawAdminPanel()
+            end
+        end
+        
+        -- Экран покупки
+        if state == "BUY" then
+            -- Кнопка обновления
+            if y == 1 and x >= w - 20 and x <= w - 10 then
+                lastUpdateTime = os.time()
+                drawBuyScreen()
+                center(h - 1, "Информация обновлена!", 0x00FF00)
+            end
+            
+            for i, item in ipairs(shopItems) do
+                if item.buttons then
+                    -- Кнопка уменьшения количества
+                    local btn = item.buttons.minus
+                    if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
+                        local currentQty = quantitySelections[item.key] or 1
+                        if currentQty > 1 then
+                            quantitySelections[item.key] = currentQty - 1
+                            drawBuyScreen()
+                        end
+                    end
+                    
+                    -- Кнопка увеличения количества
+                    btn = item.buttons.plus
+                    if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
+                        local currentQty = quantitySelections[item.key] or 1
+                        local maxQty = math.min(item.quantity, 64) -- Ограничение 64 шт. за раз
+                        if currentQty < maxQty then
+                            quantitySelections[item.key] = currentQty + 1
+                            drawBuyScreen()
+                        end
+                    end
+                    
+                    -- Кнопка покупки
+                    btn = item.buttons.buy
+                    if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
+                        local qty = quantitySelections[item.key] or 1
+                        buyItem(item.key, item.price, qty)
+                        os.sleep(1)
+                        drawBuyScreen()
+                    end
+                end
+            end
+            
+            -- Навигация
+            if y >= h - 2 and y <= h then
+                if x >= 5 and x <= 15 and page > 1 then
+                    page = page - 1
+                    drawBuyScreen()
+                elseif x >= w - 15 and x <= w - 5 and #shopItems > page * itemsPerPage then
+                    page = page + 1
+                    drawBuyScreen()
+                end
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                editingItem = nil
+                drawMainScreen()
+            end
+        end
+        
+        -- Экран продажи
+        if state == "SELL" then
+            if y >= 8 and y <= 10 then
+                if x >= 30 and x <= 50 then
+                    sellItems()
+                    os.sleep(1)
+                end
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Админ-панель
+        if state == "ADMIN" then
+            if y >= 5 and y <= 7 then
+                if x >= 5 and x <= 30 then
+                    addItemToConfig(false) -- Добавить для продажи
+                elseif x >= 35 and x <= 65 then
+                    addItemToConfig(true)  -- Добавить для покупки
+                end
+            end
+            
+            if y >= 9 and y <= 11 then
+                if x >= 5 and x <= 30 then
+                    saveConfig(config)
+                    center(h - 1, "Конфиг успешно сохранен", 0x00FF00)
+                elseif x >= 35 and x <= 60 then
+                    saveTranslations()
+                    center(h - 1, "Переводы успешно сохранены", 0x00FF00)
+                end
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+    end
+    
+    -- Обработка клавиатуры
+    if eventName == "key_down" and currentPlayer then
+        local _, char, code = ...
+        
+        -- Быстрые клавиши в главном меню
+        if state == "MAIN" then
+            if char == 49 or code == 2 then -- 1
+                state = "BUY"
+                page = 1
+                quantitySelections = {}
+                drawBuyScreen()
+            elseif char == 50 or code == 3 then -- 2
+                state = "SELL"
+                drawSellScreen()
+            elseif char == 51 or code == 4 then -- 3
+                state = "ADMIN"
+                drawAdminPanel()
+            end
+        end
+        
+        -- Навигация в меню покупки
+        if state == "BUY" then
+            if char == 27 then -- ESC
+                state = "MAIN"
+                editingItem = nil
+                drawMainScreen()
+            elseif char == 97 or code == 30 then -- A/Left
+                if page > 1 then
+                    page = page - 1
+                    drawBuyScreen()
+                end
+            elseif char == 100 or code == 32 then -- D/Right
+                if #shopItems > page * itemsPerPage then
+                    page = page + 1
+                    drawBuyScreen()
+                end
+            elseif char == 114 or code == 19 then -- R
+                lastUpdateTime = os.time()
+                drawBuyScreen()
+                center(h - 1, "Информация обновлена!", 0x00FF00)
+            end
+        end
+        
+        -- Возврат в главное меню
+        if char == 113 or code == 16 then -- Q
+            state = "MAIN"
+            editingItem = nil
+            drawMainScreen()
+        end
+    end
+end
+
+-- Основной цикл
+local function main()
+    gpu.setBackground(defBG)
+    gpu.setForeground(defFG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Сообщение о загрузке
+    center(math.floor(h/2), "Инициализация магазина FAFASTORE...", 0xFFFF00)
+    center(math.floor(h/2)+1, "Загрузка каталога товаров...", 0xFFFF00)
+    
+    -- Загрузка конфигурации
+    config = loadConfig()
+    lastUpdateTime = os.time()
+    
+    drawMainScreen()
+    
+    while true do
+        local e = {event.pull(0.5)}
+        
+        -- Проверка присутствия игрока
+        if currentPlayer and state ~= "GOODBYE" then
+            local invName = pim.getInventoryName()
+            if invName ~= currentPlayer then
+                state = "GOODBYE"
+                goodbyeTimer = computer.uptime()
+                drawGoodbyeScreen()
+            end
+        end
+        
+        -- Обработка таймера для экрана прощания
+        if state == "GOODBYE" then
+            local currentTime = computer.uptime()
+            local elapsed = currentTime - goodbyeTimer
+            
+            drawGoodbyeScreen()
+            
+            if elapsed >= 5 then
+                currentPlayer = nil
+                playerBalance = 0
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Обработка других событий
+        if e[1] then
+            handleEvent(table.unpack(e))
+        end
+    end
+end
+
+-- Запуск программы
+main()
