@@ -48,8 +48,7 @@ local logoBottom = [[
 
 -- Настройки магазина по умолчанию
 local defaultConfig = {
-    items = {},    -- Постоянный каталог товаров
-    sellItems = {["minecraft:planks"] = "Дубовые доски",  -- TODO: Перевести
+    ["minecraft:planks"] = "Дубовые доски",  -- TODO: Перевести
     ["minecraft:sapling"] = "Саженец дуба",  -- TODO: Перевести
     ["minecraft:gravel"] = "Гравий",  -- TODO: Перевести
     ["minecraft:log"] = "Дуб",  -- TODO: Перевести
