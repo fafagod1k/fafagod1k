@@ -304,21 +304,42 @@ local function drawBuyScreen()
     
     gpu.setBackground(defBG)
     
-    -- Строка поиска (серая)
+    -- Строка поиска с серой рамкой и белым текстом
     local searchY = 3
-    gpu.setForeground(0x888888) -- Серый цвет
-    gpu.set(3, searchY, "Поиск: " .. searchText)
+    local searchWidth = 47
+    local searchHeight = 3
+    
+    -- Рисуем серую рамку
+    gpu.setBackground(0x333333) -- Темно-серый фон
+    gpu.fill(3, searchY, searchWidth, searchHeight, " ")
+    
+    -- Рамка вокруг
+    gpu.setForeground(0x888888) -- Светло-серый цвет рамки
+    gpu.fill(2, searchY-1, searchWidth+2, 1, "─")
+    gpu.fill(2, searchY+searchHeight, searchWidth+2, 1, "─")
+    gpu.fill(2, searchY, 1, searchHeight, "│")
+    gpu.fill(2+searchWidth+1, searchY, 1, searchHeight, "│")
+    
+    -- Угловые символы
+    gpu.set(2, searchY-1, "┌")
+    gpu.set(2+searchWidth+1, searchY-1, "┐")
+    gpu.set(2, searchY+searchHeight, "└")
+    gpu.set(2+searchWidth+1, searchY+searchHeight, "┘")
+    
+    -- Текст внутри рамки
+    gpu.setForeground(0xFFFFFF) -- Белый текст
+    gpu.set(5, searchY+1, "Поиск: " .. searchText)
     
     -- Кнопка очистки поиска (серая)
     if searchText ~= "" then
-        drawButton(30, searchY, 10, 1, "Очистить", 0x888888, 0x000000)
+        drawButton(52, searchY, 10, 3, "Очистить", 0x888888, 0x000000)
     end
     
     -- Список товаров
     shopItems = {}
     for key, item in pairs(availableItems) do
         if item.amount > 0 then
-            -- Фильтрация по поиску
+            -- Фильтрация по поиску по всей строке
             if searchText == "" or 
                (item.label and item.label:lower():find(searchText:lower(), 1, true)) or
                (item.name and item.name:lower():find(searchText:lower(), 1, true)) then
@@ -332,7 +353,7 @@ local function drawBuyScreen()
         return (a.item.label or "ZZZ") < (b.item.label or "ZZZ")
     end)
     
-    local startY = 5  -- Сместили ниже из-за строки поиска
+    local startY = searchY + searchHeight + 2  -- Начинаем ниже строки поиска
     local startIdx = (page - 1) * itemsPerPage + 1
     
     -- Сообщение если ничего не найдено
@@ -621,13 +642,13 @@ local function handleEvent(eventName, ...)
         -- Экран покупки
         if state == "BUY" then
             -- Активация поиска при клике на строку поиска
-            if y == 3 and x >= 3 and x <= 50 then
+            if y >= 3 and y <= 5 and x >= 2 and x <= 53 then
                 isSearching = true
                 drawBuyScreen()
             end
             
             -- Очистка поиска
-            if searchText ~= "" and y == 3 and x >= 30 and x <= 40 then
+            if searchText ~= "" and y >= 3 and y <= 5 and x >= 52 and x <= 62 then
                 searchText = ""
                 page = 1
                 drawBuyScreen()
