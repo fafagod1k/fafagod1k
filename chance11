@@ -27,6 +27,12 @@ local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
 
+-- Цвета
+local defBG = 0x000000 -- черный
+local defFG = 0xFFFFFF -- белый
+local grayBG = 0x333333 -- серый фон
+local lightGrayBG = 0x444444 -- светло-серый
+
 -- Корректные логотипы магазина
 local logoTop = [[
 ███████╗ █████╗ ███████╗ █████╗ ███████╗████████╗ ██████╗ ██████╗ ███████╗
@@ -121,7 +127,6 @@ local function getAvailableItems()
 end
 
 -- Глобальные настройки GPU
-local defBG, defFG = 0x000000, 0xFFFFFF
 gpu.setBackground(defBG)
 gpu.setForeground(defFG)
 gpu.fill(1, 1, w, h, " ")
@@ -178,13 +183,18 @@ local function drawButton(x, y, width, height, text, bgColor, fgColor)
     local bg = bgColor or 0x333333
     local fg = fgColor or 0xFFFFFF
     
+    -- Сохраняем текущий фон
+    local oldBg = gpu.getBackground()
+    
     gpu.setBackground(bg)
     gpu.setForeground(fg)
     gpu.fill(x, y, width, height, " ")
     local textX = x + math.floor((width - unicode.len(text)) / 2)
     local textY = y + math.floor(height/2)
     gpu.set(textX, textY, text)
-    gpu.setBackground(defBG)
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(oldBg)
     gpu.setForeground(defFG)
     return x, y, x + width - 1, y + height - 1
 end
@@ -222,6 +232,7 @@ end
 
 -- Отрисовка экрана прощания
 local function drawGoodbyeScreen()
+    gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
     
     -- Улучшенное сердечко
@@ -259,6 +270,7 @@ end
 
 -- Отрисовка интерфейса
 local function drawMainScreen()
+    gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка
@@ -324,6 +336,10 @@ local function drawCatalog(y, items)
             name = unicode.sub(name, 1, 32) .. "..."
         end
         
+        -- Заливка строки серым фоном
+        gpu.setBackground(grayBG)
+        gpu.fill(1, y, w, 1, " ")
+        
         gpu.setForeground(0xFFFFFF)
         gpu.set(3, y, name)
         gpu.setForeground(0xFFFF00)
@@ -337,13 +353,18 @@ local function drawCatalog(y, items)
         y = y + 1
     end
     
+    -- Восстанавливаем фон
+    gpu.setBackground(grayBG)
+    
     return y
 end
 
 local function drawBuyScreen()
+    -- Устанавливаем серый фон для всего экрана
+    gpu.setBackground(grayBG)
     gpu.fill(1, 1, w, h, " ")
     
-    -- Шапка
+    -- Шапка (черная)
     gpu.setBackground(0x000000)
     gpu.fill(1, 1, w, 1, " ")
     center(1, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFFFF)
@@ -358,15 +379,13 @@ local function drawBuyScreen()
         gpu.set(2, 1, "Игрок не обнаружен")
     end
     
-    gpu.setBackground(defBG)
-    
     -- Узкая длинная строка поиска с серой рамкой и белым текстом
     local searchY = 3
     local searchWidth = w - 8  -- Отступы по 4 символа с каждой стороны
     local searchHeight = 1
     
     -- Рисуем серую рамку
-    gpu.setBackground(0x333333) -- Темно-серый фон
+    gpu.setBackground(lightGrayBG) -- Темно-серый фон
     gpu.fill(4, searchY, searchWidth, searchHeight, " ")
     
     -- Рамка вокруг
@@ -409,6 +428,7 @@ local function drawBuyScreen()
     
     -- Сообщение если ничего не найдено
     if #shopItems == 0 then
+        gpu.setBackground(grayBG)
         gpu.setForeground(0xFFFF00)
         center(math.floor(h/2), "Товары не найдены", 0xFFFF00)
         if searchText ~= "" then
@@ -420,10 +440,11 @@ local function drawBuyScreen()
         for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
             table.insert(itemsToShow, shopItems[i].item)
         end
-        drawCatalog(startY, itemsToShow)
+        startY = drawCatalog(startY, itemsToShow)
     end
     
     -- Навигация
+    gpu.setBackground(grayBG)
     if page > 1 then
         drawButton(5, h - 2, 10, 1, "< Назад", 0xF5DEB3, 0x000000)
     end
@@ -438,9 +459,13 @@ local function drawBuyScreen()
     -- Подсказка по поиску
     gpu.setForeground(0xAAAAAA)
     gpu.set(1, h, "Нажмите F для поиска, Enter для подтверждения")
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(defBG)
 end
 
 local function drawSellScreen()
+    gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка
@@ -497,6 +522,7 @@ local function drawSellScreen()
 end
 
 local function drawAdminPanel()
+    gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
     
     -- Шапка
@@ -733,6 +759,7 @@ local function handleEvent(eventName, ...)
                 if x >= 30 and x <= 50 then
                     sellItems()
                     os.sleep(1)
+                    drawSellScreen()
                 end
             end
             
@@ -872,7 +899,7 @@ local function main()
     shopItems = {}
     state = "MAIN"
     page = 1
-    itemsPerPage = 8
+    itemsPerPage = 12  -- Увеличили количество товаров на странице
     goodbyeTimer = 0
     searchText = ""
     isSearching = false
