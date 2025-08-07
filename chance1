@@ -22,7 +22,7 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
-local TRANSLATE_PATH = "translate.cfg"
+local TRANSLATE_PATH = "translate"
 local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
