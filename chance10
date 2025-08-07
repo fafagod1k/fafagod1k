@@ -149,6 +149,21 @@ local function formatNumber(num)
     return tostring(math.floor(num))
 end
 
+-- Форматирование чисел с пробелами для разделения тысяч
+local function formatNumberWithSpaces(n)
+    local s = tostring(math.floor(n))
+    local res = ""
+    local count = 0
+    for i = #s, 1, -1 do
+        res = s:sub(i, i) .. res
+        count = count + 1
+        if count % 3 == 0 and i > 1 then
+            res = " " .. res
+        end
+    end
+    return res
+end
+
 local function center(y, text, color)
     if not text then return end
     color = color or defFG
@@ -284,6 +299,47 @@ end
 local searchText = ""
 local isSearching = false
 
+-- Функция для отображения каталога товаров
+local function drawCatalog(y, items)
+    -- Заголовки таблицы
+    gpu.setForeground(0x00FF00)
+    gpu.set(3, y, "Наименование")
+    gpu.set(40, y, "Наличие")
+    gpu.set(60, y, "Цена за шт.")
+    y = y + 1
+    
+    -- Разделитель
+    gpu.setForeground(0x444444)
+    gpu.fill(3, y, w - 3, 1, "─")
+    y = y + 1
+    
+    -- Список товаров
+    for i, item in ipairs(items) do
+        local name = item.label or "Неизвестный предмет"
+        local amount = formatNumberWithSpaces(item.amount)
+        local price = string.format("%.3f", item.price):gsub("%.", ",")
+        
+        -- Обрезаем длинные названия
+        if unicode.len(name) > 35 then
+            name = unicode.sub(name, 1, 32) .. "..."
+        end
+        
+        gpu.setForeground(0xFFFFFF)
+        gpu.set(3, y, name)
+        gpu.setForeground(0xFFFF00)
+        gpu.set(40, y, amount)
+        gpu.setForeground(0x00FF00)
+        gpu.set(60, y, price)
+        
+        -- Запоминаем область строки для клика
+        items[i].button = {3, y, w-2, y}
+        
+        y = y + 1
+    end
+    
+    return y
+end
+
 local function drawBuyScreen()
     gpu.fill(1, 1, w, h, " ")
     
@@ -359,22 +415,12 @@ local function drawBuyScreen()
             center(math.floor(h/2)+1, "Попробуйте изменить запрос", 0xAAAAAA)
         end
     else
+        -- Отображение каталога
+        local itemsToShow = {}
         for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
-            local item = shopItems[i].item
-            local yPos = startY + (i - startIdx) * 2
-            
-            -- Отображение предмета
-            gpu.setForeground(0xFFFFFF)
-            gpu.set(3, yPos, item.label or "Неизвестный предмет")
-            gpu.setForeground(0x00FF00)
-            gpu.set(60, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
-            gpu.setForeground(0xFFFF00)
-            gpu.set(40, yPos, "В наличии: " .. formatNumber(item.amount) .. " шт.")
-            
-            -- Кнопка покупки
-            local btnX, btnY, btnX2, btnY2 = drawButton(70, yPos, 8, 1, "Купить", 0xF5DEB3, 0x000000)
-            shopItems[i].button = {btnX, btnY, btnX2, btnY2}
+            table.insert(itemsToShow, shopItems[i].item)
         end
+        drawCatalog(startY, itemsToShow)
     end
     
     -- Навигация
@@ -425,20 +471,26 @@ local function drawSellScreen()
     -- Кнопки
     drawButton(30, 8, 20, 3, "Продать все", 0xF5DEB3, 0x000000)
     
-    -- Список покупаемых предметов
+    -- Список покупаемых предметов в виде каталога
     gpu.setForeground(0x00FF00)
     gpu.set(5, 12, "Магазин покупает:")
     
-    local yPos = 14
+    local itemsToShow = {}
     for key, item in pairs(availableItems) do
-        gpu.setForeground(0xFFFFFF)
-        gpu.set(5, yPos, "- " .. (item.label or "Неизвестный предмет"))
-        gpu.setForeground(0xFFFF00)
-        gpu.set(40, yPos, "Цена: " .. formatNumber(DEFAULT_SELL_PRICE) .. " " .. CURRENCY_NAME .. " за шт.")
-        
-        yPos = yPos + 1
-        if yPos > h - 3 then break end
+        table.insert(itemsToShow, {
+            label = item.label,
+            amount = item.amount,
+            price = DEFAULT_SELL_PRICE
+        })
     end
+    
+    -- Сортировка по названию
+    table.sort(itemsToShow, function(a, b) 
+        return (a.label or "ZZZ") < (b.label or "ZZZ")
+    end)
+    
+    -- Отображение каталога
+    drawCatalog(14, itemsToShow)
     
     -- Кнопка возврата
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
@@ -642,11 +694,11 @@ local function handleEvent(eventName, ...)
                 drawBuyScreen()
             end
             
-            -- Обработка кнопок покупки
+            -- Обработка кликов по товарам
             for i, shopItem in ipairs(shopItems) do
                 if shopItem.button then
                     local btn = shopItem.button
-                    if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
+                    if y == btn[2] and x >= btn[1] and x <= btn[3] then
                         buyItem(shopItem.key)
                         os.sleep(1)
                         drawBuyScreen()
