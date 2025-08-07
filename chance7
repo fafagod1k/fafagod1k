@@ -304,21 +304,14 @@ local function drawBuyScreen()
     
     gpu.setBackground(defBG)
     
-    -- Строка поиска
+    -- Строка поиска (серая)
     local searchY = 3
-    gpu.setForeground(0xFFFFFF)
+    gpu.setForeground(0x888888) -- Серый цвет
     gpu.set(3, searchY, "Поиск: " .. searchText)
-    if isSearching then
-        -- Мигающий курсор
-        local cursorState = math.floor(computer.uptime() * 2) % 2 == 0
-        if cursorState then
-            gpu.set(3 + unicode.len("Поиск: " .. searchText), searchY, "_")
-        end
-    end
     
-    -- Кнопка очистки поиска
+    -- Кнопка очистки поиска (серая)
     if searchText ~= "" then
-        drawButton(30, searchY, 10, 1, "Очистить", 0x888888)
+        drawButton(30, searchY, 10, 1, "Очистить", 0x888888, 0x000000)
     end
     
     -- Список товаров
