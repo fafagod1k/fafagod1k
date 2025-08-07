@@ -99,9 +99,10 @@ local function getItemInfo(item)
     local key = id .. ":" .. dmg
     
     -- Пытаемся получить перевод из файла
+    -- Сначала пробуем ключ с уроном, потом без урона, потом базовый ID
     local translatedLabel = translations[key] or translations[id]
     
-    -- Если есть перевод, используем его
+    -- Если нашли перевод, используем его
     if translatedLabel then
         return {
             label = translatedLabel,
