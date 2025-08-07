@@ -118,12 +118,10 @@ local function scanMEForItems(config)
     return addedCount, config
 end
 
--- Получение информации о предмете с кэшированием
-local itemInfoCache = {}
+-- Получение информации о предмете с кэшированием (обновленная версия)
 local function getItemInfo(itemKey)
-    if not itemKey then return {label = "Неизвестный предмет", name = "unknown", damage = 0} end
+    if not itemKey then return {label = "Неизвестный предмет", id = "unknown", damage = 0} end
     
-    -- Используем кэш, чтобы не запрашивать информацию многократно
     if itemInfoCache[itemKey] then
         return itemInfoCache[itemKey]
     end
@@ -134,7 +132,7 @@ local function getItemInfo(itemKey)
     end
     
     if #parts < 2 then
-        itemInfoCache[itemKey] = {label = "Неизвестный предмет", name = "unknown", damage = 0}
+        itemInfoCache[itemKey] = {label = "Неизвестный предмет", id = "unknown", damage = 0}
         return itemInfoCache[itemKey]
     end
     
@@ -143,17 +141,91 @@ local function getItemInfo(itemKey)
     
     local success, itemInfo = pcall(me.getItemDetail, {name = itemID, damage = itemDmg})
     if success and itemInfo then
-        itemInfo.label = itemInfo.label or itemID
-        itemInfoCache[itemKey] = itemInfo
-        return itemInfo
+        -- Форматируем информацию для совместимости с exportItem
+        local formatted = {
+            id = itemID,
+            name = itemInfo.name,
+            label = itemInfo.label or itemID,
+            damage = itemInfo.damage or itemDmg,
+            dmg = itemInfo.damage or itemDmg,  -- Для совместимости
+            maxSize = itemInfo.maxSize or 64,
+            size = itemInfo.size or 1
+        }
+        itemInfoCache[itemKey] = formatted
+        return formatted
     end
     
-    -- Если не удалось получить информацию, создаем базовую
+    -- Резервный вариант
     itemInfoCache[itemKey] = {
-        label = itemID:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        id = itemID,
         name = itemID,
-        damage = itemDmg
+        label = itemID:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        damage = itemDmg,
+        dmg = itemDmg,
+        maxSize = 64,
+        size = 1
     }
+    
+    return itemInfoCache[itemKey]
+end
+
+-- Обновленная функция покупки
+local function buyItem(itemKey, price, amount)
+    amount = amount or 1
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    if amount < 1 then
+        center(h - 1, "Некорректное количество!", 0xFF0000)
+        return false
+    end
+    
+    if playerBalance < price * amount then
+        center(h - 1, "Недостаточно средств!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    local itemInfo = getItemInfo(itemKey)
+    
+    -- Проверка наличия в ME
+    local itemDetail = me.getItemDetail({name = itemInfo.id, damage = itemInfo.damage})
+    if not itemDetail or itemDetail.qty < amount then
+        center(h - 1, "Недостаточно товара в системе!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    -- Формируем корректный объект предмета
+    local itemStack = {
+        id = itemInfo.id,
+        name = itemInfo.name,
+        damage = itemInfo.damage,
+        dmg = itemInfo.damage,  -- Дублируем для совместимости
+        label = itemInfo.label,
+        size = amount,
+        maxSize = itemInfo.maxSize
+    }
+    
+    -- Выдача предмета
+    local success, reason = pcall(me.exportItem, itemStack, "UP", amount)
+    if success then
+        local totalPrice = price * amount
+        playerBalance = playerBalance - totalPrice
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        center(h - 1, string.format("Покупка успешна: %d x %s", amount, itemInfo.label), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    -- Обработка ошибки
+    center(h - 1, "Ошибка выдачи предмета: " .. tostring(reason), 0xFF0000)
+    computer.beep(1000, 0.5)
+    return false
+end
     
     return itemInfoCache[itemKey]
 end
