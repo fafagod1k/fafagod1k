@@ -347,7 +347,13 @@ local function drawGoodbyeScreen()
     gpu.setForeground(0xFFFFFF)
     center(startY + heartHeight + 2, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
     
-    local remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
+    -- Защита от nil в goodbyeTimer
+    local remaining = 5
+    if goodbyeTimer then
+        remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
+        if remaining < 0 then remaining = 0 end
+    end
+    
     center(startY + heartHeight + 4, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
 end
 
@@ -742,357 +748,26 @@ local function addItemToConfig(isSellItem)
     end
 end
 
--- Переменные состояния
-local config = loadConfig()
-local balances = loadBalances()
-local currentPlayer = nil
-local playerBalance = 0
-local shopItems = {}
-local state = "MAIN" -- MAIN, BUY, SELL, ADMIN, GOODBYE, BUY_AMOUNT, SEARCH
-local page = 1
-local itemsPerPage = 8
-local editingItem = nil -- Редактируемый предмет
-local priceBuffer = "" -- Буфер для ввода цены
-local lastScanTime = 0
-local goodbyeTimer = 0
-local searchQuery = "" -- Текст поискового запроса
-local selectedItem = nil -- Выбранный для покупки предмет
-local buyAmount = 1 -- Количество для покупки
-local buyAmountBuffer = "1" -- Буфер ввода количества
-
--- Обработка событий
-local function handleEvent(eventName, ...)
-    local args = {...}
-    
-    if eventName == "interrupted" then
-        gpu.setBackground(defBG)
-        gpu.setForeground(defFG)
-        gpu.fill(1, 1, w, h, " ")
-        os.exit()
-        return true
-    end
-    
-    -- Вход/выход игрока
-    if eventName == "player_on" then
-        currentPlayer = args[1]
-        playerBalance = balances[currentPlayer] or 0
-        state = "MAIN"
-        drawMainScreen()
-    elseif eventName == "player_off" then
-        state = "GOODBYE"
-        goodbyeTimer = computer.uptime()
-        drawGoodbyeScreen()
-    end
-    
-    -- Обработка касаний
-    if eventName == "touch" and currentPlayer then
-        local _, x, y, button = ...
-        
-        -- Главный экран
-        if state == "MAIN" then
-            local centerX = math.floor(w/2)
-            -- Кнопка покупки
-            if y >= 16 and y <= 18 then
-                if x >= centerX - 35 and x <= centerX - 5 then
-                    state = "BUY"
-                    page = 1
-                    searchQuery = ""
-                    drawBuyScreen()
-                -- Кнопка продажи
-                elseif x >= centerX + 5 and x <= centerX + 35 then
-                    state = "SELL"
-                    drawSellScreen()
-                end
-            end
-            
-            -- Кнопка администрирования
-            if y == h and x >= w - 15 and x <= w then
-                state = "ADMIN"
-                drawAdminPanel()
-            end
-        end
-        
-        -- Экран покупки
-        if state == "BUY" then
-            -- Поисковая строка
-            if y == 3 then
-                if x >= 50 and x <= 65 then
-                    if searchQuery ~= "" then
-                        searchQuery = ""
-                        page = 1
-                        drawBuyScreen()
-                    else
-                        state = "SEARCH"
-                    end
-                end
-            end
-            
-            -- Обработка кнопок предметов
-            for i, item in ipairs(shopItems) do
-                -- Кнопка покупки
-                if item.button then
-                    local btn = item.button
-                    if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
-                        selectedItem = item
-                        buyAmount = 1
-                        buyAmountBuffer = "1"
-                        state = "BUY_AMOUNT"
-                        drawBuyAmountScreen()
-                        break
-                    end
-                end
-                
-                -- Кнопка редактирования
-                if item.editButton then
-                    local btn = item.editButton
-                    if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
-                        if editingItem == item.key then
-                            editingItem = nil
-                        else
-                            editingItem = item.key
-                            priceBuffer = tostring(item.price)
-                        end
-                        drawBuyScreen()
-                        break
-                    end
-                end
-            end
-            
-            -- Навигация
-            if y >= h - 2 and y <= h then
-                if x >= 5 and x <= 15 and page > 1 then
-                    page = page - 1
-                    drawBuyScreen()
-                elseif x >= w - 15 and x <= w - 5 and #shopItems > page * itemsPerPage then
-                    page = page + 1
-                    drawBuyScreen()
-                end
-            end
-            
-            -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
-                state = "MAIN"
-                editingItem = nil
-                drawMainScreen()
-            end
-        end
-        
-        -- Экран выбора количества
-        if state == "BUY_AMOUNT" and selectedItem then
-            if y >= 10 and y <= 12 then
-                if x >= 25 and x <= 35 then
-                    buyAmount = math.min(buyAmount + 1, MAX_BUY_AMOUNT)
-                    buyAmountBuffer = tostring(buyAmount)
-                    drawBuyAmountScreen()
-                elseif x >= 40 and x <= 50 then
-                    buyAmount = math.min(buyAmount + 10, MAX_BUY_AMOUNT)
-                    buyAmountBuffer = tostring(buyAmount)
-                    drawBuyAmountScreen()
-                elseif x >= 55 and x <= 65 then
-                    buyAmount = math.min(buyAmount + 100, MAX_BUY_AMOUNT)
-                    buyAmountBuffer = tostring(buyAmount)
-                    drawBuyAmountScreen()
-                end
-            end
-            
-            if y >= 14 and y <= 16 then
-                if x >= 20 and x <= 35 then
-                    -- Покупка
-                    local success, msg = buyItem(selectedItem.key, selectedItem.price, buyAmount)
-                    center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
-                    if success then
-                        state = "BUY"
-                        drawBuyScreen()
-                    end
-                elseif x >= 45 and x <= 60 then
-                    -- Отмена
-                    state = "BUY"
-                    drawBuyScreen()
-                end
-            end
-        end
-        
-        -- Экран продажи
-        if state == "SELL" then
-            if y >= 8 and y <= 10 then
-                if x >= 30 and x <= 50 then
-                    local success, msg = sellItems()
-                    center(h - 1, msg, success and 0x00FF00 or 0xFFFF00)
-                    drawSellScreen()
-                elseif x >= 55 and x <= 75 then
-                    -- Сканирование инвентаря
-                    center(h - 1, "Сканирование...", 0xFFFF00)
-                    local success, msg = sellItems()
-                    center(h - 1, msg, success and 0x00FF00 or 0xFFFF00)
-                    drawSellScreen()
-                end
-            end
-            
-            -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
-                state = "MAIN"
-                drawMainScreen()
-            end
-        end
-        
-        -- Админ-панель
-        if state == "ADMIN" then
-            if y >= 5 and y <= 7 then
-                if x >= 5 and x <= 30 then
-                    local success, msg = addItemToConfig(false) -- Добавить для продажи
-                    center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
-                    drawAdminPanel()
-                elseif x >= 35 and x <= 65 then
-                    local success, msg = addItemToConfig(true)  -- Добавить для покупки
-                    center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
-                    drawAdminPanel()
-                end
-            end
-            
-            -- Дополнительные функции
-            if y >= 9 and y <= 11 then
-                if x >= 5 and x <= 25 then
-                    -- Сканирование ME системы
-                    center(h - 1, "Сканирование ME...", 0xFFFF00)
-                    local addedCount, newConfig = scanMEForItems(config)
-                    if newConfig then config = newConfig end
-                    saveConfig(config)
-                    lastScanTime = os.time()
-                    center(h - 1, "Добавлено " .. addedCount .. " новых предметов", 0x00FF00)
-                    drawAdminPanel()
-                elseif x >= 30 and x <= 55 then
-                    -- Сохранение конфига
-                    saveConfig(config)
-                    center(h - 1, "Конфиг успешно сохранен", 0x00FF00)
-                    drawAdminPanel()
-                end
-            end
-            
-            -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
-                state = "MAIN"
-                drawMainScreen()
-            end
-        end
-    end
-    
-    -- Обработка клавиатуры
-    if eventName == "key_down" and currentPlayer then
-        local _, char, code = ...
-        
-        -- Быстрые клавиши в главном меню
-        if state == "MAIN" then
-            if char == 49 or code == 2 then -- 1
-                state = "BUY"
-                page = 1
-                searchQuery = ""
-                drawBuyScreen()
-            elseif char == 50 or code == 3 then -- 2
-                state = "SELL"
-                drawSellScreen()
-            elseif char == 51 or code == 4 then -- 3
-                state = "ADMIN"
-                drawAdminPanel()
-            end
-        end
-        
-        -- Навигация в меню покупки
-        if state == "BUY" then
-            if char == 27 then -- ESC
-                state = "MAIN"
-                editingItem = nil
-                drawMainScreen()
-            elseif char == 97 or code == 30 then -- A/Left
-                if page > 1 then
-                    page = page - 1
-                    drawBuyScreen()
-                end
-            elseif char == 100 or code == 32 then -- D/Right
-                if #shopItems > page * itemsPerPage then
-                    page = page + 1
-                    drawBuyScreen()
-                end
-            end
-            
-            -- Редактирование цены
-            if editingItem then
-                if char == 13 then -- Enter
-                    local price = tonumber(priceBuffer)
-                    if price and price > 0 then
-                        config.items[editingItem] = price
-                        saveConfig(config)
-                        center(h - 1, "Цена обновлена!", 0x00FF00)
-                        editingItem = nil
-                        drawBuyScreen()
-                    else
-                        center(h - 1, "Некорректная цена!", 0xFF0000)
-                    end
-                elseif char == 8 then -- Backspace
-                    priceBuffer = priceBuffer:sub(1, -2)
-                    drawBuyScreen()
-                elseif char >= 48 and char <= 57 then -- Цифры 0-9
-                    priceBuffer = priceBuffer .. string.char(char)
-                    drawBuyScreen()
-                end
-            end
-        end
-        
-        -- Режим поиска
-        if state == "SEARCH" then
-            if char == 13 then -- Enter
-                state = "BUY"
-                page = 1
-                drawBuyScreen()
-            elseif char == 8 then -- Backspace
-                searchQuery = searchQuery:sub(1, -2)
-                drawBuyScreen()
-            elseif char >= 32 and char <= 126 then -- Печатные символы
-                searchQuery = searchQuery .. string.char(char)
-                drawBuyScreen()
-            end
-        end
-        
-        -- Режим выбора количества
-        if state == "BUY_AMOUNT" then
-            if char == 13 then -- Enter
-                buyAmount = tonumber(buyAmountBuffer) or buyAmount
-                if buyAmount > 0 then
-                    local success, msg = buyItem(selectedItem.key, selectedItem.price, buyAmount)
-                    center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
-                    if success then
-                        state = "BUY"
-                        drawBuyScreen()
-                    end
-                end
-            elseif char == 27 then -- ESC
-                state = "BUY"
-                drawBuyScreen()
-            elseif char == 8 then -- Backspace
-                buyAmountBuffer = buyAmountBuffer:sub(1, -2)
-                if buyAmountBuffer == "" then buyAmountBuffer = "0" end
-                buyAmount = tonumber(buyAmountBuffer) or 1
-                drawBuyAmountScreen()
-            elseif char >= 48 and char <= 57 then -- Цифры
-                local newValue = buyAmountBuffer .. string.char(char)
-                if tonumber(newValue) and tonumber(newValue) <= MAX_BUY_AMOUNT then
-                    buyAmountBuffer = newValue
-                    buyAmount = tonumber(buyAmountBuffer)
-                    drawBuyAmountScreen()
-                end
-            end
-        end
-        
-        -- Возврат в главное меню
-        if char == 113 or code == 16 then -- Q
-            state = "MAIN"
-            editingItem = nil
-            drawMainScreen()
-        end
-    end
-end
-
 -- Основной цикл
 local function main()
+    -- Инициализация переменных состояния
+    local config = loadConfig()
+    local balances = loadBalances()
+    local currentPlayer = nil
+    local playerBalance = 0
+    local shopItems = {}
+    local state = "MAIN" -- MAIN, BUY, SELL, ADMIN, GOODBYE, BUY_AMOUNT, SEARCH
+    local page = 1
+    local itemsPerPage = 8
+    local editingItem = nil -- Редактируемый предмет
+    local priceBuffer = "" -- Буфер для ввода цены
+    local lastScanTime = 0
+    local goodbyeTimer = 0 -- Инициализация здесь
+    local searchQuery = "" -- Текст поискового запроса
+    local selectedItem = nil -- Выбранный для покупки предмет
+    local buyAmount = 1 -- Количество для покупки
+    local buyAmountBuffer = "1" -- Буфер ввода количества
+
     -- Первоначальное сканирование ME системы
     gpu.setBackground(defBG)
     gpu.setForeground(defFG)
@@ -1110,6 +785,337 @@ local function main()
     
     drawMainScreen()
     
+    -- Обработка событий
+    local function handleEvent(eventName, ...)
+        local args = {...}
+        
+        if eventName == "interrupted" then
+            gpu.setBackground(defBG)
+            gpu.setForeground(defFG)
+            gpu.fill(1, 1, w, h, " ")
+            os.exit()
+            return true
+        end
+        
+        -- Вход/выход игрока
+        if eventName == "player_on" then
+            currentPlayer = args[1]
+            playerBalance = balances[currentPlayer] or 0
+            state = "MAIN"
+            drawMainScreen()
+        elseif eventName == "player_off" then
+            state = "GOODBYE"
+            goodbyeTimer = computer.uptime()
+            drawGoodbyeScreen()
+        end
+        
+        -- Обработка касаний
+        if eventName == "touch" and currentPlayer then
+            local _, x, y, button = ...
+            
+            -- Главный экран
+            if state == "MAIN" then
+                local centerX = math.floor(w/2)
+                -- Кнопка покупки
+                if y >= 16 and y <= 18 then
+                    if x >= centerX - 35 and x <= centerX - 5 then
+                        state = "BUY"
+                        page = 1
+                        searchQuery = ""
+                        drawBuyScreen()
+                    -- Кнопка продажи
+                    elseif x >= centerX + 5 and x <= centerX + 35 then
+                        state = "SELL"
+                        drawSellScreen()
+                    end
+                end
+                
+                -- Кнопка администрирования
+                if y == h and x >= w - 15 and x <= w then
+                    state = "ADMIN"
+                    drawAdminPanel()
+                end
+            end
+            
+            -- Экран покупки
+            if state == "BUY" then
+                -- Поисковая строка
+                if y == 3 then
+                    if x >= 50 and x <= 65 then
+                        if searchQuery ~= "" then
+                            searchQuery = ""
+                            page = 1
+                            drawBuyScreen()
+                        else
+                            state = "SEARCH"
+                        end
+                    end
+                end
+                
+                -- Обработка кнопок предметов
+                for i, item in ipairs(shopItems) do
+                    -- Кнопка покупки
+                    if item.button then
+                        local btn = item.button
+                        if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
+                            selectedItem = item
+                            buyAmount = 1
+                            buyAmountBuffer = "1"
+                            state = "BUY_AMOUNT"
+                            drawBuyAmountScreen()
+                            break
+                        end
+                    end
+                    
+                    -- Кнопка редактирования
+                    if item.editButton then
+                        local btn = item.editButton
+                        if x >= btn[1] and x <= btn[3] and y >= btn[2] and y <= btn[4] then
+                            if editingItem == item.key then
+                                editingItem = nil
+                            else
+                                editingItem = item.key
+                                priceBuffer = tostring(item.price)
+                            end
+                            drawBuyScreen()
+                            break
+                        end
+                    end
+                end
+                
+                -- Навигация
+                if y >= h - 2 and y <= h then
+                    if x >= 5 and x <= 15 and page > 1 then
+                        page = page - 1
+                        drawBuyScreen()
+                    elseif x >= w - 15 and x <= w - 5 and #shopItems > page * itemsPerPage then
+                        page = page + 1
+                        drawBuyScreen()
+                    end
+                end
+                
+                -- Кнопка возврата
+                if y == h and x >= w - 10 and x <= w then
+                    state = "MAIN"
+                    editingItem = nil
+                    drawMainScreen()
+                end
+            end
+            
+            -- Экран выбора количества
+            if state == "BUY_AMOUNT" and selectedItem then
+                if y >= 10 and y <= 12 then
+                    if x >= 25 and x <= 35 then
+                        buyAmount = math.min(buyAmount + 1, MAX_BUY_AMOUNT)
+                        buyAmountBuffer = tostring(buyAmount)
+                        drawBuyAmountScreen()
+                    elseif x >= 40 and x <= 50 then
+                        buyAmount = math.min(buyAmount + 10, MAX_BUY_AMOUNT)
+                        buyAmountBuffer = tostring(buyAmount)
+                        drawBuyAmountScreen()
+                    elseif x >= 55 and x <= 65 then
+                        buyAmount = math.min(buyAmount + 100, MAX_BUY_AMOUNT)
+                        buyAmountBuffer = tostring(buyAmount)
+                        drawBuyAmountScreen()
+                    end
+                end
+                
+                if y >= 14 and y <= 16 then
+                    if x >= 20 and x <= 35 then
+                        -- Покупка
+                        local success, msg = buyItem(selectedItem.key, selectedItem.price, buyAmount)
+                        center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
+                        if success then
+                            state = "BUY"
+                            drawBuyScreen()
+                        end
+                    elseif x >= 45 and x <= 60 then
+                        -- Отмена
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            end
+            
+            -- Экран продажи
+            if state == "SELL" then
+                if y >= 8 and y <= 10 then
+                    if x >= 30 and x <= 50 then
+                        local success, msg = sellItems()
+                        center(h - 1, msg, success and 0x00FF00 or 0xFFFF00)
+                        drawSellScreen()
+                    elseif x >= 55 and x <= 75 then
+                        -- Сканирование инвентаря
+                        center(h - 1, "Сканирование...", 0xFFFF00)
+                        local success, msg = sellItems()
+                        center(h - 1, msg, success and 0x00FF00 or 0xFFFF00)
+                        drawSellScreen()
+                    end
+                end
+                
+                -- Кнопка возврата
+                if y == h and x >= w - 10 and x <= w then
+                    state = "MAIN"
+                    drawMainScreen()
+                end
+            end
+            
+            -- Админ-панель
+            if state == "ADMIN" then
+                if y >= 5 and y <= 7 then
+                    if x >= 5 and x <= 30 then
+                        local success, msg = addItemToConfig(false) -- Добавить для продажи
+                        center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
+                        drawAdminPanel()
+                    elseif x >= 35 and x <= 65 then
+                        local success, msg = addItemToConfig(true)  -- Добавить для покупки
+                        center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
+                        drawAdminPanel()
+                    end
+                end
+                
+                -- Дополнительные функции
+                if y >= 9 and y <= 11 then
+                    if x >= 5 and x <= 25 then
+                        -- Сканирование ME системы
+                        center(h - 1, "Сканирование ME...", 0xFFFF00)
+                        local addedCount, newConfig = scanMEForItems(config)
+                        if newConfig then config = newConfig end
+                        saveConfig(config)
+                        lastScanTime = os.time()
+                        center(h - 1, "Добавлено " .. addedCount .. " новых предметов", 0x00FF00)
+                        drawAdminPanel()
+                    elseif x >= 30 and x <= 55 then
+                        -- Сохранение конфига
+                        saveConfig(config)
+                        center(h - 1, "Конфиг успешно сохранен", 0x00FF00)
+                        drawAdminPanel()
+                    end
+                end
+                
+                -- Кнопка возврата
+                if y == h and x >= w - 10 and x <= w then
+                    state = "MAIN"
+                    drawMainScreen()
+                end
+            end
+        end
+        
+        -- Обработка клавиатуры
+        if eventName == "key_down" and currentPlayer then
+            local _, char, code = ...
+            
+            -- Быстрые клавиши в главном меню
+            if state == "MAIN" then
+                if char == 49 or code == 2 then -- 1
+                    state = "BUY"
+                    page = 1
+                    searchQuery = ""
+                    drawBuyScreen()
+                elseif char == 50 or code == 3 then -- 2
+                    state = "SELL"
+                    drawSellScreen()
+                elseif char == 51 or code == 4 then -- 3
+                    state = "ADMIN"
+                    drawAdminPanel()
+                end
+            end
+            
+            -- Навигация в меню покупки
+            if state == "BUY" then
+                if char == 27 then -- ESC
+                    state = "MAIN"
+                    editingItem = nil
+                    drawMainScreen()
+                elseif char == 97 or code == 30 then -- A/Left
+                    if page > 1 then
+                        page = page - 1
+                        drawBuyScreen()
+                    end
+                elseif char == 100 or code == 32 then -- D/Right
+                    if #shopItems > page * itemsPerPage then
+                        page = page + 1
+                        drawBuyScreen()
+                    end
+                end
+                
+                -- Редактирование цены
+                if editingItem then
+                    if char == 13 then -- Enter
+                        local price = tonumber(priceBuffer)
+                        if price and price > 0 then
+                            config.items[editingItem] = price
+                            saveConfig(config)
+                            center(h - 1, "Цена обновлена!", 0x00FF00)
+                            editingItem = nil
+                            drawBuyScreen()
+                        else
+                            center(h - 1, "Некорректная цена!", 0xFF0000)
+                        end
+                    elseif char == 8 then -- Backspace
+                        priceBuffer = priceBuffer:sub(1, -2)
+                        drawBuyScreen()
+                    elseif char >= 48 and char <= 57 then -- Цифры 0-9
+                        priceBuffer = priceBuffer .. string.char(char)
+                        drawBuyScreen()
+                    end
+                end
+            end
+            
+            -- Режим поиска
+            if state == "SEARCH" then
+                if char == 13 then -- Enter
+                    state = "BUY"
+                    page = 1
+                    drawBuyScreen()
+                elseif char == 8 then -- Backspace
+                    searchQuery = searchQuery:sub(1, -2)
+                    drawBuyScreen()
+                elseif char >= 32 and char <= 126 then -- Печатные символы
+                    searchQuery = searchQuery .. string.char(char)
+                    drawBuyScreen()
+                end
+            end
+            
+            -- Режим выбора количества
+            if state == "BUY_AMOUNT" then
+                if char == 13 then -- Enter
+                    buyAmount = tonumber(buyAmountBuffer) or buyAmount
+                    if buyAmount > 0 then
+                        local success, msg = buyItem(selectedItem.key, selectedItem.price, buyAmount)
+                        center(h - 1, msg, success and 0x00FF00 or 0xFF0000)
+                        if success then
+                            state = "BUY"
+                            drawBuyScreen()
+                        end
+                    end
+                elseif char == 27 then -- ESC
+                    state = "BUY"
+                    drawBuyScreen()
+                elseif char == 8 then -- Backspace
+                    buyAmountBuffer = buyAmountBuffer:sub(1, -2)
+                    if buyAmountBuffer == "" then buyAmountBuffer = "0" end
+                    buyAmount = tonumber(buyAmountBuffer) or 1
+                    drawBuyAmountScreen()
+                elseif char >= 48 and char <= 57 then -- Цифры
+                    local newValue = buyAmountBuffer .. string.char(char)
+                    if tonumber(newValue) and tonumber(newValue) <= MAX_BUY_AMOUNT then
+                        buyAmountBuffer = newValue
+                        buyAmount = tonumber(buyAmountBuffer)
+                        drawBuyAmountScreen()
+                    end
+                end
+            end
+            
+            -- Возврат в главное меню
+            if char == 113 or code == 16 then -- Q
+                state = "MAIN"
+                editingItem = nil
+                drawMainScreen()
+            end
+        end
+    end
+
     while true do
         local e = {event.pull(0.5)} -- Ожидаем события с таймаутом 0.5 сек
         
@@ -1128,7 +1134,14 @@ local function main()
         -- Обработка таймера для экрана прощания
         if state == "GOODBYE" then
             local currentTime = computer.uptime()
-            local elapsed = currentTime - goodbyeTimer
+            local elapsed = 0
+            
+            if goodbyeTimer then
+                elapsed = currentTime - goodbyeTimer
+            else
+                -- Если по какой-то причине goodbyeTimer не установлен
+                goodbyeTimer = currentTime
+            end
             
             -- Обновляем таймер на экране
             drawGoodbyeScreen()
