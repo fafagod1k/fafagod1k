@@ -80,52 +80,19 @@ end
 -- Глобальная переменная с переводами
 local translations = loadTranslations()
 
--- Вспомогательная функция для подсчета размера таблицы
-local function table_size(t)
-    if not t then return 0 end
-    local count = 0
-    for _ in pairs(t) do count = count + 1 end
-    return count
-end
-
--- Улучшенная функция для получения информации о предмете
+-- Получение информации о предмете С ИСПОЛЬЗОВАНИЕМ ПЕРЕВОДОВ
 local function getItemInfo(item)
-    if not item or not item.name then 
-        return {label = "Неизвестный предмет", name = "unknown", damage = 0} 
-    end
+    if not item then return {label = "Неизвестный предмет", name = "unknown"} end
     
     local dmg = item.dmg or 0
-    local id = item.name
+    local id = item.id or item.name
     local key = id .. ":" .. dmg
     
-    -- Пытаемся получить перевод из файла
-    -- Сначала пробуем ключ с уроном, потом без урона, потом базовый ID
-    local translatedLabel = translations[key] or translations[id]
+    -- Используем перевод если он доступен
+    local translatedLabel = translations[key] or translations[id] or nil
     
-    -- Если нашли перевод, используем его
-    if translatedLabel then
-        return {
-            label = translatedLabel,
-            name = id,
-            damage = dmg,
-            key = key
-        }
-    end
-    
-    -- Пытаемся получить информацию через ME
-    local success, itemInfo = pcall(me.getItemDetail, {name = id, damage = dmg})
-    if success and itemInfo then
-        return {
-            label = itemInfo.label or id,
-            name = id,
-            damage = dmg,
-            key = key
-        }
-    end
-    
-    -- Если ничего не получилось, генерируем имя из ID
     return {
-        label = id:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        label = translatedLabel or item.label or id:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
         name = id,
         damage = dmg,
         key = key
@@ -459,13 +426,12 @@ local function drawAdminPanel()
     gpu.setForeground(0x00FF00)
     gpu.set(5, 9, "Статистика магазина:")
     
-    local itemCount = table_size(availableItems)
-    local translationCount = table_size(translations)
+    local itemCount = 0
+    for _ in pairs(availableItems) do itemCount = itemCount + 1 end
     
     gpu.setForeground(0xFFFFFF)
     gpu.set(5, 11, "Доступно предметов: " .. itemCount)
-    gpu.set(5, 12, "Загружено переводов: " .. translationCount)
-    gpu.set(5, 13, "Последнее обновление: " .. os.date("%H:%M:%S", lastScanTime))
+    gpu.set(5, 12, "Последнее обновление: " .. os.date("%H:%M:%S", lastScanTime))
     
     -- Кнопка возврата
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
