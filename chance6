@@ -280,6 +280,10 @@ local function drawMainScreen()
     gpu.set(1, h, "Стоя на PIM, используйте сенсорный экран или клавиши 1-3")
 end
 
+-- Глобальные переменные для поиска
+local searchText = ""
+local isSearching = false
+
 local function drawBuyScreen()
     gpu.fill(1, 1, w, h, " ")
     
@@ -300,11 +304,33 @@ local function drawBuyScreen()
     
     gpu.setBackground(defBG)
     
+    -- Строка поиска
+    local searchY = 3
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(3, searchY, "Поиск: " .. searchText)
+    if isSearching then
+        -- Мигающий курсор
+        local cursorState = math.floor(computer.uptime() * 2) % 2 == 0
+        if cursorState then
+            gpu.set(3 + unicode.len("Поиск: " .. searchText), searchY, "_")
+        end
+    end
+    
+    -- Кнопка очистки поиска
+    if searchText ~= "" then
+        drawButton(30, searchY, 10, 1, "Очистить", 0x888888)
+    end
+    
     -- Список товаров
     shopItems = {}
     for key, item in pairs(availableItems) do
         if item.amount > 0 then
-            table.insert(shopItems, {key = key, item = item})
+            -- Фильтрация по поиску
+            if searchText == "" or 
+               (item.label and item.label:lower():find(searchText:lower(), 1, true)) or
+               (item.name and item.name:lower():find(searchText:lower(), 1, true)) then
+                table.insert(shopItems, {key = key, item = item})
+            end
         end
     end
     
@@ -313,24 +339,33 @@ local function drawBuyScreen()
         return (a.item.label or "ZZZ") < (b.item.label or "ZZZ")
     end)
     
-    local startY = 3
+    local startY = 5  -- Сместили ниже из-за строки поиска
     local startIdx = (page - 1) * itemsPerPage + 1
     
-    for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
-        local item = shopItems[i].item
-        local yPos = startY + (i - startIdx) * 2
-        
-        -- Отображение предмета
-        gpu.setForeground(0xFFFFFF)
-        gpu.set(3, yPos, item.label or "Неизвестный предмет")
-        gpu.setForeground(0x00FF00)
-        gpu.set(60, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
+    -- Сообщение если ничего не найдено
+    if #shopItems == 0 then
         gpu.setForeground(0xFFFF00)
-        gpu.set(40, yPos, "В наличии: " .. formatNumber(item.amount) .. " шт.")
-        
-        -- Кнопка покупки
-        local btnX, btnY, btnX2, btnY2 = drawButton(70, yPos, 8, 1, "Купить", 0xF5DEB3, 0x000000)
-        shopItems[i].button = {btnX, btnY, btnX2, btnY2}
+        center(math.floor(h/2), "Товары не найдены", 0xFFFF00)
+        if searchText ~= "" then
+            center(math.floor(h/2)+1, "Попробуйте изменить запрос", 0xAAAAAA)
+        end
+    else
+        for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
+            local item = shopItems[i].item
+            local yPos = startY + (i - startIdx) * 2
+            
+            -- Отображение предмета
+            gpu.setForeground(0xFFFFFF)
+            gpu.set(3, yPos, item.label or "Неизвестный предмет")
+            gpu.setForeground(0x00FF00)
+            gpu.set(60, yPos, "Цена: " .. formatNumber(item.price) .. " " .. CURRENCY_NAME)
+            gpu.setForeground(0xFFFF00)
+            gpu.set(40, yPos, "В наличии: " .. formatNumber(item.amount) .. " шт.")
+            
+            -- Кнопка покупки
+            local btnX, btnY, btnX2, btnY2 = drawButton(70, yPos, 8, 1, "Купить", 0xF5DEB3, 0x000000)
+            shopItems[i].button = {btnX, btnY, btnX2, btnY2}
+        end
     end
     
     -- Навигация
@@ -344,6 +379,10 @@ local function drawBuyScreen()
     
     -- Кнопка возврата
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    
+    -- Подсказка по поиску
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h, "Нажмите F для поиска, Enter для подтверждения")
 end
 
 local function drawSellScreen()
@@ -569,6 +608,8 @@ local function handleEvent(eventName, ...)
                 if x >= centerX - 35 and x <= centerX - 5 then
                     state = "BUY"
                     page = 1
+                    searchText = ""
+                    isSearching = false
                     drawBuyScreen()
                 -- Кнопка продажи
                 elseif x >= centerX + 5 and x <= centerX + 35 then
@@ -586,6 +627,20 @@ local function handleEvent(eventName, ...)
         
         -- Экран покупки
         if state == "BUY" then
+            -- Активация поиска при клике на строку поиска
+            if y == 3 and x >= 3 and x <= 50 then
+                isSearching = true
+                drawBuyScreen()
+            end
+            
+            -- Очистка поиска
+            if searchText ~= "" and y == 3 and x >= 30 and x <= 40 then
+                searchText = ""
+                page = 1
+                drawBuyScreen()
+            end
+            
+            -- Обработка кнопок покупки
             for i, shopItem in ipairs(shopItems) do
                 if shopItem.button then
                     local btn = shopItem.button
@@ -612,6 +667,8 @@ local function handleEvent(eventName, ...)
             -- Кнопка возврата
             if y == h and x >= w - 10 and x <= w then
                 state = "MAIN"
+                searchText = ""
+                isSearching = false
                 drawMainScreen()
             end
         end
@@ -662,6 +719,8 @@ local function handleEvent(eventName, ...)
             if char == 49 or code == 2 then -- 1
                 state = "BUY"
                 page = 1
+                searchText = ""
+                isSearching = false
                 drawBuyScreen()
             elseif char == 50 or code == 3 then -- 2
                 state = "SELL"
@@ -676,6 +735,8 @@ local function handleEvent(eventName, ...)
         if state == "BUY" then
             if char == 27 then -- ESC
                 state = "MAIN"
+                searchText = ""
+                isSearching = false
                 drawMainScreen()
             elseif char == 97 or code == 30 then -- A/Left
                 if page > 1 then
@@ -688,11 +749,49 @@ local function handleEvent(eventName, ...)
                     drawBuyScreen()
                 end
             end
+            
+            -- Активация/деактивация поиска
+            if char == 102 or code == 33 then -- F key
+                isSearching = not isSearching
+                drawBuyScreen()
+            end
+            
+            -- Ввод текста поиска
+            if isSearching then
+                if char then
+                    -- Буквы и цифры
+                    if (char >= 65 and char <= 90) or   -- A-Z
+                       (char >= 97 and char <= 122) or  -- a-z
+                       (char >= 48 and char <= 57) or   -- 0-9
+                       char == 32 then                  -- Space
+                        searchText = searchText .. string.char(char)
+                        page = 1
+                        drawBuyScreen()
+                    -- Backspace
+                    elseif char == 8 then
+                        searchText = searchText:sub(1, -2)
+                        page = 1
+                        drawBuyScreen()
+                    -- Enter - завершение поиска
+                    elseif char == 13 then
+                        isSearching = false
+                        drawBuyScreen()
+                    -- Escape - очистка и выход
+                    elseif char == 27 then
+                        searchText = ""
+                        isSearching = false
+                        page = 1
+                        drawBuyScreen()
+                    end
+                end
+            end
         end
         
         -- Возврат в главное меню
         if char == 113 or code == 16 then -- Q
             state = "MAIN"
+            searchText = ""
+            isSearching = false
             drawMainScreen()
         end
     end
@@ -721,6 +820,8 @@ local function main()
     page = 1
     itemsPerPage = 8
     goodbyeTimer = 0
+    searchText = ""
+    isSearching = false
     
     drawMainScreen()
     
