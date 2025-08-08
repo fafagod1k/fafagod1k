@@ -75,12 +75,35 @@ end
 local function loadTranslations()
     local translations = {}
     
-    if fs.exists(TRANSLATE_PATH) then
-        local file = io.open(TRANSLATE_PATH, "r")
-        local data = file:read("*a")
+    -- Создаем пример файла переводов, если он отсутствует
+    if not fs.exists(TRANSLATE_PATH) then
+        local exampleTranslations = {
+            ["minecraft:stone:0"] = "Камень",
+            ["minecraft:dirt:0"] = "Земля",
+            ["minecraft:wool:0"] = "Белая шерсть",
+            ["minecraft:wool:1"] = "Оранжевая шерсть",
+            ["minecraft:wool:2"] = "Пурпурная шерсть",
+            ["create:crushed_ore:0"] = "Дробленая руда",
+            ["create:experience_nugget:0"] = "Кусочек опыта",
+            ["minecraft:iron_ingot:0"] = "Железный слиток",
+            ["minecraft:gold_ingot:0"] = "Золотой слиток",
+            ["minecraft:diamond:0"] = "Алмаз",
+            ["minecraft:emerald:0"] = "Изумруд",
+            ["minecraft:coal:0"] = "Уголь",
+            ["minecraft:redstone:0"] = "Редстоун",
+            ["minecraft:quartz:0"] = "Кварц",
+            ["minecraft:glowstone_dust:0"] = "Светокамень"
+        }
+        local file = io.open(TRANSLATE_PATH, "w")
+        file:write(serialization.serialize(exampleTranslations))
         file:close()
-        translations = serialization.unserialize(data) or {}
+        return exampleTranslations
     end
+    
+    local file = io.open(TRANSLATE_PATH, "r")
+    local data = file:read("*a")
+    file:close()
+    translations = serialization.unserialize(data) or {}
     
     return translations
 end
@@ -99,8 +122,19 @@ local function getItemInfo(item)
     -- Используем перевод если он доступен
     local translatedLabel = translations[key] or translations[id] or nil
     
+    -- Если нет перевода, создаем читаемое имя из ID
+    if not translatedLabel then
+        -- Заменяем подчеркивания на пробелы
+        local formattedName = id:gsub("_", " ")
+        -- Делаем первую букву каждого слова заглавной
+        formattedName = formattedName:gsub("(%a)([%w_']*)", function(first, rest)
+            return first:upper() .. rest:lower()
+        end)
+        translatedLabel = formattedName
+    end
+    
     return {
-        label = translatedLabel or item.label or id:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        label = translatedLabel,
         name = id,
         damage = dmg,
         key = key
