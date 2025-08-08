@@ -157,7 +157,7 @@ local function formatNumber(num)
         return tostring(math.floor(num))
     end
     
-    local symbols = {"", "K", "M", "B", "T"}
+    local symbols = {"", "тыс", "млн", "млрд", "трлн"}
     local formattedNum = num
     local symbolIndex = 1
 
@@ -167,7 +167,7 @@ local function formatNumber(num)
     end
 
     if symbolIndex > 1 then
-        return string.format("%.1f%s", formattedNum, symbols[symbolIndex])
+        return string.format("%.1f %s", formattedNum, symbols[symbolIndex])
     end
 
     return tostring(math.floor(num))
@@ -541,7 +541,7 @@ local function drawBuyItemScreen()
         {"7", "8", "9"},
         {"4", "5", "6"},
         {"1", "2", "3"},
-        {"0", "C", "←"}
+        {"0", "С", "←"}
     }
     
     local startX = 5
@@ -666,7 +666,7 @@ local function drawAdminPanel()
     center(3, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
     
     -- Кнопки
-    drawButton(5, 5, 20, 3, "Обновить ME", 0xF5DEB3, 0x000000)
+    drawButton(5, 5, 20, 3, "Обновить базу", 0xF5DEB3, 0x000000)
     
     -- Статистика
     gpu.setForeground(0x00FF00)
@@ -905,13 +905,13 @@ local function handleEvent(eventName, ...)
                 {x1=11, y1=17, x2=15, y2=18, value="2"},
                 {x1=17, y1=17, x2=21, y2=18, value="3"},
                 {x1=5, y1=20, x2=9, y2=21, value="0"},
-                {x1=11, y1=20, x2=15, y2=21, value="C"},
+                {x1=11, y1=20, x2=15, y2=21, value="С"},
                 {x1=17, y1=20, x2=21, y2=21, value="←"}
             }
             
             for _, key in ipairs(keys) do
                 if y >= key.y1 and y <= key.y2 and x >= key.x1 and x <= key.x2 then
-                    if key.value == "C" then
+                    if key.value == "С" then
                         quantityInput = "0"
                     elseif key.value == "←" then
                         if #quantityInput > 0 then
