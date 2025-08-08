@@ -22,7 +22,7 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
-local TRANSLATE_PATH = "translate.cfg"
+local TRANSLATE_PATH = "tran.lua"  -- Изменено на tran.lua
 local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
@@ -73,19 +73,12 @@ end
 
 -- Загрузка переводов предметов (исправленная версия)
 local function loadTranslations()
-    local loaded = {}
-    
     if fs.exists(TRANSLATE_PATH) then
-        local file = io.open(TRANSLATE_PATH, "r")
-        local data = file:read("*a")
-        file:close()
-        
-        -- Безопасная загрузка данных
-        local chunk, err = load("return " .. data, "translate", "t", {})
+        local chunk, err = loadfile(TRANSLATE_PATH, "t", _G)
         if chunk then
             local success, result = pcall(chunk)
-            if success and type(result) == "table" then
-                loaded = result
+            if success then
+                return result
             else
                 print("Ошибка выполнения переводов: " .. tostring(result))
             end
@@ -93,11 +86,10 @@ local function loadTranslations()
             print("Ошибка загрузки переводов: " .. tostring(err))
         end
     end
-    
-    return loaded
+    return {}
 end
 
--- Глобальная переменная с переводами (гарантированно таблица)
+-- Глобальная переменная с переводами
 local translations = loadTranslations()
 
 -- Получение информации о предмете с использованием переводов (исправленная версия)
@@ -106,24 +98,15 @@ local function getItemInfo(item)
         return {label = "Неизвестный предмет", name = "unknown", damage = 0, key = "unknown"}
     end
     
-    -- Используем корректные поля из объекта предмета
     local dmg = item.damage or item.dmg or 0
     local id = item.name
-    local key = id .. (dmg > 0 and (":" .. dmg) or "")
     
-    -- Ищем перевод по приоритетам с защитой от nil
-    local translation = nil
-    if type(translations) == "table" then
-        translation = translations[key] or translations[id]
-    end
+    -- Используем ID для поиска перевода без указания damage
+    local translation = translations[id]
     
     local label = translation or item.label or id
-    -- Форматирование названия если нет перевода
-    if not translation and not item.label then
-        label = label:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) 
-            return a:upper()..b:lower() 
-        end)
-    end
+    -- Формируем уникальный ключ с учетом damage
+    local key = id .. (dmg > 0 and (":" .. dmg) or "")
     
     return {
         label = label,
