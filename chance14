@@ -480,6 +480,12 @@ end
 
 -- Отрисовка экрана выбора количества
 local function drawBuyItemScreen()
+    if not selectedItem then
+        state = "BUY"
+        drawBuyScreen()
+        return
+    end
+    
     gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
     
@@ -832,16 +838,18 @@ local function handleEvent(eventName, ...)
             end
             
             -- Обработка кликов по товарам
+            local startY = 6 -- Начало списка товаров
+            local itemHeight = 1 -- Высота одной строки
+            
             for i, shopItem in ipairs(shopItems) do
-                if shopItem.button then
-                    local btn = shopItem.button
-                    if y == btn[2] and x >= btn[1] and x <= btn[3] then
-                        selectedItem = shopItem.item
-                        quantityInput = "1"
-                        state = "BUY_ITEM"
-                        drawBuyItemScreen()
-                        break
-                    end
+                local itemY = startY + i - 1
+                if y == itemY and x >= 3 and x <= w-2 then
+                    computer.beep(1500, 0.1) -- Звуковой сигнал
+                    selectedItem = shopItem.item
+                    quantityInput = "1"
+                    state = "BUY_ITEM"
+                    drawBuyItemScreen()
+                    return
                 end
             end
             
@@ -907,7 +915,7 @@ local function handleEvent(eventName, ...)
                         end
                     end
                     drawBuyItemScreen()
-                    break
+                    return
                 end
             end
             
