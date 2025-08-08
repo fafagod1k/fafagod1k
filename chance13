@@ -32,6 +32,8 @@ local defBG = 0x000000 -- черный
 local defFG = 0xFFFFFF -- белый
 local grayBG = 0x333333 -- серый фон
 local lightGrayBG = 0x444444 -- светло-серый
+local buttonBG = 0x555555 -- цвет кнопок калькулятора
+local buttonActiveBG = 0x777777 -- активная кнопка
 
 -- Корректные логотипы магазина
 local logoTop = [[
@@ -314,6 +316,11 @@ local blinkState = true
 local lastBlinkTime = 0
 local blinkInterval = 0.5 -- интервал мигания в секундах
 
+-- Переменные для экрана выбора количества
+local selectedItem = nil
+local quantityInput = "1"
+local maxQuantity = 0
+
 -- Функция для отображения каталога товаров
 local function drawCatalog(y, items)
     -- Заголовки таблицы
@@ -471,6 +478,92 @@ local function drawBuyScreen()
     gpu.setBackground(defBG)
 end
 
+-- Отрисовка экрана выбора количества
+local function drawBuyItemScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ВЫБОР КОЛИЧЕСТВА", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    end
+    
+    gpu.setBackground(defBG)
+    
+    -- Информация о выбранном предмете
+    gpu.setForeground(0xFFFF00)
+    center(3, "Вы выбрали: " .. (selectedItem.label or "Неизвестный предмет"), 0xFFFF00)
+    
+    -- Детали предмета
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 5, "В наличии: " .. formatNumberWithSpaces(selectedItem.amount))
+    gpu.set(40, 5, "Цена за шт.: " .. string.format("%.3f", selectedItem.price):gsub("%.", ","))
+    gpu.set(5, 6, "Баланс: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Ввод количества
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(5, 8, "Введите количество:")
+    
+    -- Поле ввода количества
+    gpu.setBackground(lightGrayBG)
+    gpu.fill(5, 9, 20, 1, " ")
+    gpu.set(6, 9, quantityInput)
+    
+    -- Клавиатура калькулятора
+    local keys = {
+        {"7", "8", "9"},
+        {"4", "5", "6"},
+        {"1", "2", "3"},
+        {"0", "C", "←"}
+    }
+    
+    local startX = 5
+    local startY = 11
+    local btnWidth = 5
+    local btnHeight = 2
+    local spacing = 1
+    
+    -- Рисуем клавиатуру
+    for row = 1, 4 do
+        for col = 1, 3 do
+            local key = keys[row][col]
+            if key then
+                drawButton(
+                    startX + (col-1)*(btnWidth + spacing), 
+                    startY + (row-1)*(btnHeight + spacing), 
+                    btnWidth, 
+                    btnHeight, 
+                    key, 
+                    buttonBG
+                )
+            end
+        end
+    end
+    
+    -- Итоговая информация
+    local quantity = tonumber(quantityInput) or 0
+    local totalPrice = quantity * selectedItem.price
+    
+    gpu.setForeground(0x00FF00)
+    gpu.set(40, 8, "Количество: " .. quantity)
+    gpu.set(40, 9, "Общая стоимость: " .. string.format("%.3f", totalPrice):gsub("%.", ",") .. " " .. CURRENCY_NAME)
+    gpu.set(40, 10, "Остаток на балансе: " .. formatNumber(playerBalance - totalPrice) .. " " .. CURRENCY_NAME)
+    
+    -- Кнопки действий
+    drawButton(5, 20, 15, 3, "Купить", 0x00AA00, 0xFFFFFF)
+    drawButton(25, 20, 15, 3, "Отмена", 0xAA0000, 0xFFFFFF)
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
 local function drawSellScreen()
     gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
@@ -571,7 +664,7 @@ local function drawAdminPanel()
 end
 
 -- Логика магазина
-local function buyItem(itemKey)
+local function buyItem(itemKey, quantity)
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
         return false
@@ -583,29 +676,37 @@ local function buyItem(itemKey)
         return false
     end
     
-    if playerBalance < item.price then
+    quantity = tonumber(quantity) or 1
+    if quantity <= 0 then
+        center(h - 1, "Некорректное количество!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    if quantity > item.amount then
+        center(h - 1, "Недостаточно товара!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    local totalPrice = quantity * item.price
+    if playerBalance < totalPrice then
         center(h - 1, "Недостаточно средств!", 0xFF0000)
         computer.beep(1000, 0.5)
         return false
     end
     
-    if item.amount < 1 then
-        center(h - 1, "Товара нет в наличии!", 0xFF0000)
-        computer.beep(1000, 0.5)
-        return false
-    end
-    
     -- Выдача предмета
-    local success = me.exportItem({name = item.name, damage = item.damage}, "UP", 1)
+    local success = me.exportItem({name = item.name, damage = item.damage}, "UP", quantity)
     if success and success.size > 0 then
-        playerBalance = playerBalance - item.price
+        playerBalance = playerBalance - totalPrice
         balances[currentPlayer] = playerBalance
         saveBalances(balances)
         
         -- Обновляем количество
-        item.amount = item.amount - 1
+        item.amount = item.amount - quantity
         
-        center(h - 1, "Покупка успешна: " .. (item.label or "предмет"), 0x00FF00)
+        center(h - 1, "Покупка успешна: " .. quantity .. "x " .. (item.label or "предмет"), 0x00FF00)
         computer.beep(2000, 0.2)
         return true
     end
@@ -735,9 +836,10 @@ local function handleEvent(eventName, ...)
                 if shopItem.button then
                     local btn = shopItem.button
                     if y == btn[2] and x >= btn[1] and x <= btn[3] then
-                        buyItem(shopItem.key)
-                        os.sleep(1)
-                        drawBuyScreen()
+                        selectedItem = shopItem.item
+                        quantityInput = "1"
+                        state = "BUY_ITEM"
+                        drawBuyItemScreen()
                         break
                     end
                 end
@@ -759,6 +861,76 @@ local function handleEvent(eventName, ...)
                 state = "MAIN"
                 searchText = ""
                 isSearching = false
+                drawMainScreen()
+            end
+        end
+        
+        -- Экран выбора количества
+        if state == "BUY_ITEM" then
+            -- Обработка клавиатуры калькулятора
+            local keys = {
+                {x1=5, y1=11, x2=9, y2=12, value="7"},
+                {x1=11, y1=11, x2=15, y2=12, value="8"},
+                {x1=17, y1=11, x2=21, y2=12, value="9"},
+                {x1=5, y1=14, x2=9, y2=15, value="4"},
+                {x1=11, y1=14, x2=15, y2=15, value="5"},
+                {x1=17, y1=14, x2=21, y2=15, value="6"},
+                {x1=5, y1=17, x2=9, y2=18, value="1"},
+                {x1=11, y1=17, x2=15, y2=18, value="2"},
+                {x1=17, y1=17, x2=21, y2=18, value="3"},
+                {x1=5, y1=20, x2=9, y2=21, value="0"},
+                {x1=11, y1=20, x2=15, y2=21, value="C"},
+                {x1=17, y1=20, x2=21, y2=21, value="←"}
+            }
+            
+            for _, key in ipairs(keys) do
+                if y >= key.y1 and y <= key.y2 and x >= key.x1 and x <= key.x2 then
+                    if key.value == "C" then
+                        quantityInput = "0"
+                    elseif key.value == "←" then
+                        if #quantityInput > 0 then
+                            quantityInput = quantityInput:sub(1, -2)
+                        end
+                        if quantityInput == "" then
+                            quantityInput = "0"
+                        end
+                    else
+                        if quantityInput == "0" then
+                            quantityInput = key.value
+                        else
+                            -- Проверка на максимальное количество
+                            local newInput = quantityInput .. key.value
+                            local newQuantity = tonumber(newInput) or 0
+                            if newQuantity <= selectedItem.amount and newQuantity <= math.floor(playerBalance / selectedItem.price) then
+                                quantityInput = newInput
+                            end
+                        end
+                    end
+                    drawBuyItemScreen()
+                    break
+                end
+            end
+            
+            -- Кнопка покупки
+            if y >= 20 and y <= 22 and x >= 5 and x <= 19 then
+                local quantity = tonumber(quantityInput) or 0
+                if quantity > 0 then
+                    if buyItem(selectedItem.key, quantity) then
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            end
+            
+            -- Кнопка отмены
+            if y >= 20 and y <= 22 and x >= 25 and x <= 39 then
+                state = "BUY"
+                drawBuyScreen()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
                 drawMainScreen()
             end
         end
@@ -882,6 +1054,41 @@ local function handleEvent(eventName, ...)
                         drawBuyScreen()
                     end
                 end
+            end
+        end
+        
+        -- Ввод количества на экране покупки
+        if state == "BUY_ITEM" then
+            if char >= 48 and char <= 57 then -- Цифры 0-9
+                if quantityInput == "0" then
+                    quantityInput = string.char(char)
+                else
+                    local newInput = quantityInput .. string.char(char)
+                    local newQuantity = tonumber(newInput) or 0
+                    if newQuantity <= selectedItem.amount and newQuantity <= math.floor(playerBalance / selectedItem.price) then
+                        quantityInput = newInput
+                    end
+                end
+                drawBuyItemScreen()
+            elseif char == 8 then -- Backspace
+                if #quantityInput > 0 then
+                    quantityInput = quantityInput:sub(1, -2)
+                end
+                if quantityInput == "" then
+                    quantityInput = "0"
+                end
+                drawBuyItemScreen()
+            elseif char == 13 then -- Enter
+                local quantity = tonumber(quantityInput) or 0
+                if quantity > 0 then
+                    if buyItem(selectedItem.key, quantity) then
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            elseif char == 27 then -- ESC
+                state = "BUY"
+                drawBuyScreen()
             end
         end
         
