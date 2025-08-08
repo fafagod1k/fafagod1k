@@ -71,50 +71,67 @@ local function saveBalances(balances)
     file:close()
 end
 
--- Загрузка переводов предметов (оптимизированная версия)
+-- Загрузка переводов предметов (исправленная версия)
 local function loadTranslations()
+    local loaded = {}
+    
     if fs.exists(TRANSLATE_PATH) then
         local file = io.open(TRANSLATE_PATH, "r")
         local data = file:read("*a")
         file:close()
         
-        -- Парсинг файла как Lua таблицы
+        -- Безопасная загрузка данных
         local chunk, err = load("return " .. data, "translate", "t", {})
         if chunk then
             local success, result = pcall(chunk)
-            if success then
-                return result
+            if success and type(result) == "table" then
+                loaded = result
+            else
+                print("Ошибка выполнения переводов: " .. tostring(result))
             end
+        else
+            print("Ошибка загрузки переводов: " .. tostring(err))
         end
-        print("Ошибка загрузки переводов: " .. tostring(err))
     end
-    return {}
+    
+    return loaded
 end
 
--- Получение информации о предмете с использованием переводов (оптимизированная версия)
+-- Глобальная переменная с переводами (гарантированно таблица)
+local translations = loadTranslations()
+
+-- Получение информации о предмете с использованием переводов (исправленная версия)
 local function getItemInfo(item)
-    if not item then return {label = "Неизвестный предмет", name = "unknown"} end
+    if not item or not item.name then 
+        return {label = "Неизвестный предмет", name = "unknown", damage = 0, key = "unknown"}
+    end
     
     -- Используем корректные поля из объекта предмета
     local dmg = item.damage or item.dmg or 0
-    local id = item.name or item.id
+    local id = item.name
     local key = id .. (dmg > 0 and (":" .. dmg) or "")
     
-    -- Ищем перевод по приоритетам: полный ключ > только ID > label из ME
-    local translation = translations[key] or translations[id]
+    -- Ищем перевод по приоритетам с защитой от nil
+    local translation = nil
+    if type(translations) == "table" then
+        translation = translations[key] or translations[id]
+    end
+    
+    local label = translation or item.label or id
+    -- Форматирование названия если нет перевода
+    if not translation and not item.label then
+        label = label:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) 
+            return a:upper()..b:lower() 
+        end)
+    end
     
     return {
-        label = translation or item.label or id:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) 
-            return a:upper()..b:lower() 
-        end),
+        label = label,
         name = id,
         damage = dmg,
         key = key
     }
 end
-
--- Глобальная переменная с переводами
-local translations = loadTranslations()
 
 -- Сканирование ME системы для получения доступных предметов
 local function getAvailableItems()
@@ -332,7 +349,7 @@ local maxQuantity = 0
 
 -- Функция для отображения каталога товаров
 local function drawCatalog(y, items)
-    -- Заголовки таблицы
+    -- Заголовки таблица
     gpu.setForeground(0x00FF00)
     gpu.set(3, y, "Наименование")
     gpu.set(40, y, "Наличие")
