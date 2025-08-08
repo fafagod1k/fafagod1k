@@ -798,9 +798,6 @@ local function handleEvent(eventName, ...)
     if eventName == "touch" and currentPlayer then
         local _, x, y, button = ...
         
-        -- Для отладки
-        -- gpu.set(1, 1, "Touch: "..x..", "..y.."       ")
-        
         -- Главный экран
         if state == "MAIN" then
             local centerX = math.floor(w/2)
@@ -845,7 +842,7 @@ local function handleEvent(eventName, ...)
             for idx = startIdx, endIdx do
                 local shopItem = shopItems[idx]
                 local itemIndex = idx - startIdx + 1  -- индекс на странице, начиная с 1
-                local itemY = startY + itemIndex - 1  -- координата Y строки товара
+                local itemY = startY + itemIndex + 1  -- координата Y строки товара (с учетом заголовков)
                 
                 if y == itemY and x >= 3 and x <= w-2 then
                     computer.beep(1500, 0.1)
@@ -907,15 +904,11 @@ local function handleEvent(eventName, ...)
                             quantityInput = "0"
                         end
                     else
+                        -- Убраны ограничения на ввод чисел
                         if quantityInput == "0" then
                             quantityInput = key.value
                         else
-                            -- Проверка на максимальное количество
-                            local newInput = quantityInput .. key.value
-                            local newQuantity = tonumber(newInput) or 0
-                            if newQuantity <= selectedItem.amount and newQuantity <= math.floor(playerBalance / selectedItem.price) then
-                                quantityInput = newInput
-                            end
+                            quantityInput = quantityInput .. key.value
                         end
                     end
                     drawBuyItemScreen()
@@ -1071,11 +1064,7 @@ local function handleEvent(eventName, ...)
                 if quantityInput == "0" then
                     quantityInput = string.char(char)
                 else
-                    local newInput = quantityInput .. string.char(char)
-                    local newQuantity = tonumber(newInput) or 0
-                    if newQuantity <= selectedItem.amount and newQuantity <= math.floor(playerBalance / selectedItem.price) then
-                        quantityInput = newInput
-                    end
+                    quantityInput = quantityInput .. string.char(char)
                 end
                 drawBuyItemScreen()
             elseif char == 8 then -- Backspace
