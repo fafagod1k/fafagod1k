@@ -340,7 +340,7 @@ local maxQuantity = 0
 
 -- Функция для отображения каталога товаров
 local function drawCatalog(y, items)
-    -- Заголовки таблица
+    -- Заголовки таблицы
     gpu.setForeground(0x00FF00)
     gpu.set(3, y, "Наименование")
     gpu.set(40, y, "Наличие")
