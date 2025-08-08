@@ -310,6 +310,9 @@ end
 -- Глобальные переменные для поиска
 local searchText = ""
 local isSearching = false
+local blinkState = true
+local lastBlinkTime = 0
+local blinkInterval = 0.5 -- интервал мигания в секундах
 
 -- Функция для отображения каталога товаров
 local function drawCatalog(y, items)
@@ -401,9 +404,13 @@ local function drawBuyScreen()
     gpu.set(3, searchY+searchHeight, "└")
     gpu.set(3+searchWidth+1, searchY+searchHeight, "┘")
     
-    -- Текст внутри рамки
+    -- Текст внутри рамки с мигающим курсором
+    local displayText = "Поиск: " .. searchText
+    if isSearching and blinkState then
+        displayText = displayText .. "_"
+    end
     gpu.setForeground(0xFFFFFF) -- Белый текст
-    gpu.set(5, searchY, "Поиск: " .. searchText)
+    gpu.set(5, searchY, displayText)
     
     -- Список товаров
     shopItems = {}
@@ -697,6 +704,7 @@ local function handleEvent(eventName, ...)
                     page = 1
                     searchText = ""
                     isSearching = false
+                    blinkState = true
                     drawBuyScreen()
                 -- Кнопка продажи
                 elseif x >= centerX + 5 and x <= centerX + 35 then
@@ -717,6 +725,8 @@ local function handleEvent(eventName, ...)
             -- Активация поиска при клике на строку поиска
             if y == 3 and x >= 4 and x <= w - 4 then
                 isSearching = true
+                blinkState = true
+                lastBlinkTime = computer.uptime()
                 drawBuyScreen()
             end
             
@@ -802,6 +812,7 @@ local function handleEvent(eventName, ...)
                 page = 1
                 searchText = ""
                 isSearching = false
+                blinkState = true
                 drawBuyScreen()
             elseif char == 50 or code == 3 then -- 2
                 state = "SELL"
@@ -834,6 +845,8 @@ local function handleEvent(eventName, ...)
             -- Активация/деактивация поиска
             if char == 102 or code == 33 then -- F key
                 isSearching = not isSearching
+                blinkState = true
+                lastBlinkTime = computer.uptime()
                 drawBuyScreen()
             end
             
@@ -847,11 +860,15 @@ local function handleEvent(eventName, ...)
                        char == 32 then                  -- Space
                         searchText = searchText .. string.char(char)
                         page = 1
+                        blinkState = true
+                        lastBlinkTime = computer.uptime()
                         drawBuyScreen()
                     -- Backspace
                     elseif char == 8 then
                         searchText = searchText:sub(1, -2)
                         page = 1
+                        blinkState = true
+                        lastBlinkTime = computer.uptime()
                         drawBuyScreen()
                     -- Enter - завершение поиска
                     elseif char == 13 then
@@ -899,15 +916,26 @@ local function main()
     shopItems = {}
     state = "MAIN"
     page = 1
-    itemsPerPage = 12  -- Увеличили количество товаров на странице
+    itemsPerPage = 12
     goodbyeTimer = 0
     searchText = ""
     isSearching = false
+    blinkState = true
+    lastBlinkTime = computer.uptime()
+    local blinkInterval = 0.5
     
     drawMainScreen()
     
     while true do
-        local e = {event.pull(0.5)}
+        local e = {event.pull(0.1)}  -- Уменьшили таймаут для плавного мигания
+        
+        -- Обновление мигания курсора
+        local currentTime = computer.uptime()
+        if state == "BUY" and isSearching and (currentTime - lastBlinkTime) >= blinkInterval then
+            blinkState = not blinkState
+            lastBlinkTime = currentTime
+            drawBuyScreen()
+        end
         
         -- Проверка присутствия игрока
         if currentPlayer and state ~= "GOODBYE" then
