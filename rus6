@@ -22,7 +22,7 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
-local TRANSLATE_PATH = "tran.lua"  -- Изменено на tran.lua
+local TRANSLATE_PATH = "tran.lua"
 local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
@@ -74,10 +74,15 @@ end
 -- Загрузка переводов предметов (исправленная версия)
 local function loadTranslations()
     if fs.exists(TRANSLATE_PATH) then
-        local chunk, err = loadfile(TRANSLATE_PATH, "t", _G)
+        local file = io.open(TRANSLATE_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        
+        -- Загрузка таблицы переводов
+        local chunk, err = load("return " .. data, "translate", "t", {})
         if chunk then
             local success, result = pcall(chunk)
-            if success then
+            if success and type(result) == "table" then
                 return result
             else
                 print("Ошибка выполнения переводов: " .. tostring(result))
@@ -98,19 +103,22 @@ local function getItemInfo(item)
         return {label = "Неизвестный предмет", name = "unknown", damage = 0, key = "unknown"}
     end
     
+    -- Извлекаем базовое имя без damage
+    local baseName = item.name:match("^([^@]+)") or item.name
     local dmg = item.damage or item.dmg or 0
-    local id = item.name
     
-    -- Используем ID для поиска перевода без указания damage
-    local translation = translations[id]
+    -- Ищем перевод по базовому имени
+    local translation = translations[baseName]
     
-    local label = translation or item.label or id
-    -- Формируем уникальный ключ с учетом damage
-    local key = id .. (dmg > 0 and (":" .. dmg) or "")
+    -- Формируем полный ключ
+    local key = baseName .. (dmg > 0 and (":" .. dmg) or "")
+    
+    -- Используем перевод, если он есть
+    local label = translation or item.label or baseName
     
     return {
         label = label,
-        name = id,
+        name = baseName,
         damage = dmg,
         key = key
     }
