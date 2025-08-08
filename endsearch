@@ -1,0 +1,1177 @@
+local unicode = require("unicode")
+local computer = require("computer")
+local com = require("component")
+local event = require("event")
+local fs = require("filesystem")
+local shell = require("shell")
+local serialization = require("serialization")
+
+-- Загрузка inspect.lua
+if not fs.exists("/lib/inspect.lua") then
+    shell.execute("wget -q https://raw.githubusercontent.com/kikito/inspect.lua/master/inspect.lua /lib/inspect.lua")
+end
+local inspect = require("inspect")
+
+-- Компоненты
+local me = com.isAvailable("me_interface") and com.me_interface or error("ME интерфейс не подключен")
+local pim = com.isAvailable("pim") and com.pim or error("PIM не подключен")
+local gpu = com.gpu
+local w, h = 80, 25
+gpu.setResolution(w, h)
+
+-- Константы
+local CURRENCY_NAME = "Эмы"
+local BALANCES_PATH = "balances.cfg"
+local TRANSLATE_PATH = "translate.cfg"
+local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
+local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
+local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
+
+-- Цвета
+local defBG = 0x000000 -- черный
+local defFG = 0xFFFFFF -- белый
+local grayBG = 0x333333 -- серый фон
+local lightGrayBG = 0x444444 -- светло-серый
+local buttonBG = 0x555555 -- цвет кнопок калькулятора
+local buttonActiveBG = 0x777777 -- активная кнопка
+
+-- Корректные логотипы магазина
+local logoTop = [[
+███████╗ █████╗ ███████╗ █████╗ ███████╗████████╗ ██████╗ ██████╗ ███████╗
+██╔════╝██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
+█████╗  ███████║█████╗  ███████║███████╗   ██║   ██║   ██║██████╔╝█████╗  
+██╔══╝  ██╔══██║██╔══╝  ██╔══██║╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝  
+██║     ██║  ██║██║     ██║  ██║███████║   ██║   ╚██████╔╝██║  ██║███████╗
+╚═╝     ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+]]
+
+local logoBottom = [[
+███╗   ███╗ ██████╗ ███████╗██╗  ██╗██╗██╗     ██╗     
+████╗ ████║██╔════╝ ██╔════╝██║ ██╔╝██║██║     ██║     
+██╔████╔██║██║      ███████╗█████╔╝ ██║██║     ██║     
+██║╚██╔╝██║██║      ╚════██║██╔═██╗ ██║██║     ██║     
+██║ ╚═╝ ██║╚██████╗ ███████║██║  ██╗██║███████╗███████╗
+╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
+]]
+
+-- Загрузка/сохранение балансов
+local function loadBalances()
+    if fs.exists(BALANCES_PATH) then
+        local file = io.open(BALANCES_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        return serialization.unserialize(data) or {}
+    end
+    return {}
+end
+
+local function saveBalances(balances)
+    local file = io.open(BALANCES_PATH, "w")
+    file:write(serialization.serialize(balances))
+    file:close()
+end
+
+-- Загрузка переводов предметов
+local function loadTranslations()
+    local translations = {}
+    
+    if fs.exists(TRANSLATE_PATH) then
+        local file = io.open(TRANSLATE_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        translations = serialization.unserialize(data) or {}
+    end
+    
+    return translations
+end
+
+-- Глобальная переменная с переводами
+local translations = loadTranslations()
+
+-- Получение информации о предмете С ИСПОЛЬЗОВАНИЕМ ПЕРЕВОДОВ
+local function getItemInfo(item)
+    if not item then return {label = "Неизвестный предмет", name = "unknown"} end
+    
+    local dmg = item.dmg or 0
+    local id = item.id or item.name
+    local key = id .. ":" .. dmg
+    
+    -- Используем перевод если он доступен
+    local translatedLabel = translations[key] or translations[id] or nil
+    
+    return {
+        label = translatedLabel or item.label or id:gsub("_", " "):gsub("(%a)(%S*)", function(a, b) return a:upper()..b:lower() end),
+        name = id,
+        damage = dmg,
+        key = key
+    }
+end
+
+-- Сканирование ME системы для получения доступных предметов
+local function getAvailableItems()
+    local availableItems = {}
+    local itemsInME = me.getItemsInNetwork()
+    
+    for _, item in ipairs(itemsInME) do
+        if item and item.name then
+            local info = getItemInfo(item)
+            availableItems[info.key] = {
+                label = info.label,
+                name = info.name,
+                damage = info.damage,
+                price = DEFAULT_BUY_PRICE,
+                amount = item.size
+            }
+        end
+    end
+    
+    return availableItems
+end
+
+-- Глобальные настройки GPU
+gpu.setBackground(defBG)
+gpu.setForeground(defFG)
+gpu.fill(1, 1, w, h, " ")
+
+-- Утилиты
+local function formatNumber(num)
+    if not num then return "0" end
+    if num < 1000 then
+        return tostring(math.floor(num))
+    end
+    
+    local symbols = {"", "K", "M", "B", "T"}
+    local formattedNum = num
+    local symbolIndex = 1
+
+    while formattedNum >= 1000 and symbolIndex < #symbols do
+        formattedNum = formattedNum / 1000
+        symbolIndex = symbolIndex + 1
+    end
+
+    if symbolIndex > 1 then
+        return string.format("%.1f%s", formattedNum, symbols[symbolIndex])
+    end
+
+    return tostring(math.floor(num))
+end
+
+-- Форматирование чисел с пробелами для разделения тысяч
+local function formatNumberWithSpaces(n)
+    local s = tostring(math.floor(n))
+    local res = ""
+    local count = 0
+    for i = #s, 1, -1 do
+        res = s:sub(i, i) .. res
+        count = count + 1
+        if count % 3 == 0 and i > 1 then
+            res = " " .. res
+        end
+    end
+    return res
+end
+
+local function center(y, text, color)
+    if not text then return end
+    color = color or defFG
+    gpu.setForeground(color)
+    local x = math.floor((w - unicode.len(text)) / 2)
+    gpu.set(x, y, text)
+    gpu.setForeground(defFG)
+end
+
+local function drawButton(x, y, width, height, text, bgColor, fgColor)
+    if not text then return end
+    local bg = bgColor or 0x333333
+    local fg = fgColor or 0xFFFFFF
+    
+    -- Сохраняем текущий фон
+    local oldBg = gpu.getBackground()
+    
+    gpu.setBackground(bg)
+    gpu.setForeground(fg)
+    gpu.fill(x, y, width, height, " ")
+    local textX = x + math.floor((width - unicode.len(text)) / 2)
+    local textY = y + math.floor(height/2)
+    gpu.set(textX, textY, text)
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(oldBg)
+    gpu.setForeground(defFG)
+    return x, y, x + width - 1, y + height - 1
+end
+
+-- Функция для отображения логотипа
+local function drawLogo()
+    -- Отображение надписи FAFASTORE
+    local topLines = {}
+    for line in logoTop:gmatch("[^\n]+") do
+        table.insert(topLines, line)
+    end
+    
+    local topStartY = 4
+    for i, line in ipairs(topLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x1E90FF) -- Синий (DodgerBlue)
+        gpu.set(x, topStartY + i - 1, line)
+    end
+    
+    -- Отображение надписи mcskill
+    local bottomLines = {}
+    for line in logoBottom:gmatch("[^\n]+") do
+        table.insert(bottomLines, line)
+    end
+    
+    local bottomStartY = topStartY + #topLines
+    for i, line in ipairs(bottomLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x9370DB) -- Фиолетовый
+        gpu.set(x, bottomStartY + i - 1, line)
+    end
+    
+    gpu.setForeground(defFG)
+end
+
+-- Отрисовка экрана прощания
+local function drawGoodbyeScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Улучшенное сердечко
+    local heart = {
+        "    ██    ██    ",
+        "   ████  ████   ",
+        "  ███████████  ",
+        "  ███████████  ",
+        "   █████████   ",
+        "    ███████    ",
+        "     █████     ",
+        "      ███      ",
+        "       █       "
+    }
+    
+    -- Расположение сердечка
+    local heartHeight = #heart
+    local startY = math.floor(h/2) - heartHeight - 3
+    
+    -- Рисуем сердечко
+    for i, line in ipairs(heart) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0xFF69B4) -- Ярко-розовый
+        gpu.set(x, startY + i, line)
+    end
+    
+    -- Сообщение
+    gpu.setForeground(0xFFFFFF)
+    center(startY + heartHeight + 2, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
+    
+    -- Таймер
+    local remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
+    center(startY + heartHeight + 4, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
+end
+
+-- Отрисовка интерфейса
+local function drawMainScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "МАГАЗИН FAFASTORE", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    -- Отображение логотипа
+    drawLogo()
+    
+    -- Кнопки
+    local centerX = math.floor(w/2)
+    drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0xF5DEB3, 0x000000)
+    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0xF5DEB3, 0x000000)
+    
+    -- Авторы магазина
+    center(20, "Авторы магазина: fafagod1k и другие", 0xAAAAAA)
+    
+    -- Кнопка администрирования
+    drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h, "Стоя на PIM, используйте сенсорный экран или клавиши 1-3")
+end
+
+-- Глобальные переменные для поиска
+local searchText = ""
+local isSearching = false
+local blinkState = true
+local lastBlinkTime = 0
+local blinkInterval = 0.5 -- интервал мигания в секундах
+
+-- Переменные для экрана выбора количества
+local selectedItem = nil
+local quantityInput = "1"
+local maxQuantity = 0
+
+-- Функция для отображения каталога товаров
+local function drawCatalog(y, items)
+    -- Заголовки таблицы
+    gpu.setForeground(0x00FF00)
+    gpu.set(3, y, "Наименование")
+    gpu.set(40, y, "Наличие")
+    gpu.set(60, y, "Цена за шт.")
+    y = y + 1
+    
+    -- Разделитель
+    gpu.setForeground(0x444444)
+    gpu.fill(3, y, w - 3, 1, "─")
+    y = y + 1
+    
+    -- Список товаров
+    for i, item in ipairs(items) do
+        local name = item.label or "Неизвестный предмет"
+        local amount = formatNumberWithSpaces(item.amount)
+        local price = string.format("%.3f", item.price):gsub("%.", ",")
+        
+        -- Обрезаем длинные названия
+        if unicode.len(name) > 35 then
+            name = unicode.sub(name, 1, 32) .. "..."
+        end
+        
+        -- Заливка строки серым фоном
+        gpu.setBackground(grayBG)
+        gpu.fill(1, y, w, 1, " ")
+        
+        gpu.setForeground(0xFFFFFF)
+        gpu.set(3, y, name)
+        gpu.setForeground(0xFFFF00)
+        gpu.set(40, y, amount)
+        gpu.setForeground(0x00FF00)
+        gpu.set(60, y, price)
+        
+        y = y + 1
+    end
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(grayBG)
+    
+    return y
+end
+
+local function drawBuyScreen()
+    -- Устанавливаем серый фон для всего экрана
+    gpu.setBackground(grayBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка (черная)
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    -- Узкая длинная строка поиска с серой рамкой и белым текстом
+    local searchY = 3
+    local searchWidth = w - 8  -- Отступы по 4 символа с каждой стороны
+    local searchHeight = 1
+    
+    -- Рисуем серую рамку
+    gpu.setBackground(lightGrayBG) -- Темно-серый фон
+    gpu.fill(4, searchY, searchWidth, searchHeight, " ")
+    
+    -- Рамка вокруг
+    gpu.setForeground(0x888888) -- Светло-серый цвет рамки
+    gpu.fill(3, searchY-1, searchWidth+2, 1, "─")
+    gpu.fill(3, searchY+searchHeight, searchWidth+2, 1, "─")
+    gpu.fill(3, searchY, 1, searchHeight, "│")
+    gpu.fill(3+searchWidth+1, searchY, 1, searchHeight, "│")
+    
+    -- Угловые символы
+    gpu.set(3, searchY-1, "┌")
+    gpu.set(3+searchWidth+1, searchY-1, "┐")
+    gpu.set(3, searchY+searchHeight, "└")
+    gpu.set(3+searchWidth+1, searchY+searchHeight, "┘")
+    
+    -- Текст внутри рамки с мигающим курсором
+    local displayText = "Поиск: " .. searchText
+    if isSearching and blinkState then
+        displayText = displayText .. "_"
+    end
+    gpu.setForeground(0xFFFFFF) -- Белый текст
+    gpu.set(5, searchY, displayText)
+    
+    -- Список товаров
+    shopItems = {}
+    for key, item in pairs(availableItems) do
+        if item.amount > 0 then
+            -- Фильтрация по поиску по всей строке
+            if searchText == "" or 
+               (item.label and item.label:lower():find(searchText:lower(), 1, true)) or
+               (item.name and item.name:lower():find(searchText:lower(), 1, true)) then
+                table.insert(shopItems, {key = key, item = item})
+            end
+        end
+    end
+    
+    -- Сортировка по названию
+    table.sort(shopItems, function(a, b) 
+        return (a.item.label or "ZZZ") < (b.item.label or "ZZZ")
+    end)
+    
+    local startY = searchY + 3  -- Начинаем ниже строки поиска
+    local startIdx = (page - 1) * itemsPerPage + 1
+    
+    -- Сообщение если ничего не найдено
+    if #shopItems == 0 then
+        gpu.setBackground(grayBG)
+        gpu.setForeground(0xFFFF00)
+        center(math.floor(h/2), "Товары не найдены", 0xFFFF00)
+        if searchText ~= "" then
+            center(math.floor(h/2)+1, "Попробуйте изменить запрос", 0xAAAAAA)
+        end
+    else
+        -- Отображение каталога
+        local itemsToShow = {}
+        for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
+            table.insert(itemsToShow, shopItems[i].item)
+        end
+        startY = drawCatalog(startY, itemsToShow)
+    end
+    
+    -- Навигация
+    gpu.setBackground(grayBG)
+    if page > 1 then
+        drawButton(5, h - 2, 10, 1, "< Назад", 0xF5DEB3, 0x000000)
+    end
+    
+    if #shopItems > page * itemsPerPage then
+        drawButton(w - 15, h - 2, 10, 1, "Вперед >", 0xF5DEB3, 0x000000)
+    end
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    
+    -- Подсказка по поиску
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h, "Нажмите F для поиска, Enter для подтверждения")
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(defBG)
+end
+
+-- Отрисовка экрана выбора количества
+local function drawBuyItemScreen()
+    if not selectedItem then
+        state = "BUY"
+        drawBuyScreen()
+        return
+    end
+    
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ВЫБОР КОЛИЧЕСТВА", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    end
+    
+    gpu.setBackground(defBG)
+    
+    -- Информация о выбранном предмете
+    gpu.setForeground(0xFFFF00)
+    center(3, "Вы выбрали: " .. (selectedItem.label or "Неизвестный предмет"), 0xFFFF00)
+    
+    -- Детали предмета
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 5, "В наличии: " .. formatNumberWithSpaces(selectedItem.amount))
+    gpu.set(40, 5, "Цена за шт.: " .. string.format("%.3f", selectedItem.price):gsub("%.", ","))
+    gpu.set(5, 6, "Баланс: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Ввод количества
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(5, 8, "Введите количество:")
+    
+    -- Поле ввода количества
+    gpu.setBackground(lightGrayBG)
+    gpu.fill(5, 9, 20, 1, " ")
+    gpu.set(6, 9, quantityInput)
+    
+    -- Клавиатура калькулятора
+    local keys = {
+        {"7", "8", "9"},
+        {"4", "5", "6"},
+        {"1", "2", "3"},
+        {"0", "C", "←"}
+    }
+    
+    local startX = 5
+    local startY = 11
+    local btnWidth = 5
+    local btnHeight = 2
+    local spacing = 1
+    
+    -- Рисуем клавиатуру
+    for row = 1, 4 do
+        for col = 1, 3 do
+            local key = keys[row][col]
+            if key then
+                drawButton(
+                    startX + (col-1)*(btnWidth + spacing), 
+                    startY + (row-1)*(btnHeight + spacing), 
+                    btnWidth, 
+                    btnHeight, 
+                    key, 
+                    buttonBG
+                )
+            end
+        end
+    end
+    
+    -- Итоговая информация
+    local quantity = tonumber(quantityInput) or 0
+    local totalPrice = quantity * selectedItem.price
+    
+    gpu.setForeground(0x00FF00)
+    gpu.set(40, 8, "Количество: " .. quantity)
+    gpu.set(40, 9, "Общая стоимость: " .. string.format("%.3f", totalPrice):gsub("%.", ",") .. " " .. CURRENCY_NAME)
+    gpu.set(40, 10, "Остаток на балансе: " .. formatNumber(playerBalance - totalPrice) .. " " .. CURRENCY_NAME)
+    
+    -- Кнопки действий
+    drawButton(5, 20, 15, 3, "Купить", 0x00AA00, 0xFFFFFF)
+    drawButton(25, 20, 15, 3, "Отмена", 0xAA0000, 0xFFFFFF)
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+local function drawSellScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ПРОДАЖА ПРЕДМЕТОВ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    gpu.setBackground(defBG)
+    
+    gpu.setForeground(0xFFFF00)
+    center(3, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    center(5, "Положите предметы для продажи в инвентарь", 0xAAAAAA)
+    center(6, "и нажмите 'Продать все'", 0xAAAAAA)
+    
+    -- Кнопки
+    drawButton(30, 8, 20, 3, "Продать все", 0xF5DEB3, 0x000000)
+    
+    -- Список покупаемых предметов в виде каталога
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 12, "Магазин покупает:")
+    
+    local itemsToShow = {}
+    for key, item in pairs(availableItems) do
+        table.insert(itemsToShow, {
+            label = item.label,
+            amount = item.amount,
+            price = DEFAULT_SELL_PRICE
+        })
+    end
+    
+    -- Сортировка по названию
+    table.sort(itemsToShow, function(a, b) 
+        return (a.label or "ZZZ") < (b.label or "ZZZ")
+    end)
+    
+    -- Отображение каталога
+    drawCatalog(14, itemsToShow)
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+local function drawAdminPanel()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    gpu.setBackground(defBG)
+    
+    gpu.setForeground(0xFF00FF)
+    center(3, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
+    
+    -- Кнопки
+    drawButton(5, 5, 20, 3, "Обновить ME", 0xF5DEB3, 0x000000)
+    
+    -- Статистика
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 9, "Статистика магазина:")
+    
+    local itemCount = 0
+    for _ in pairs(availableItems) do itemCount = itemCount + 1 end
+    
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(5, 11, "Доступно предметов: " .. itemCount)
+    gpu.set(5, 12, "Последнее обновление: " .. os.date("%H:%M:%S", lastScanTime))
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+-- Логика магазина
+local function buyItem(itemKey, quantity)
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local item = availableItems[itemKey]
+    if not item then
+        center(h - 1, "Предмет не найден!", 0xFF0000)
+        return false
+    end
+    
+    quantity = tonumber(quantity) or 1
+    if quantity <= 0 then
+        center(h - 1, "Некорректное количество!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    if quantity > item.amount then
+        center(h - 1, "Недостаточно товара!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    local totalPrice = quantity * item.price
+    if playerBalance < totalPrice then
+        center(h - 1, "Недостаточно средств!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    -- Выдача предмета
+    local success = me.exportItem({name = item.name, damage = item.damage}, "UP", quantity)
+    if success and success.size > 0 then
+        playerBalance = playerBalance - totalPrice
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        
+        -- Обновляем количество
+        item.amount = item.amount - quantity
+        
+        center(h - 1, "Покупка успешна: " .. quantity .. "x " .. (item.label or "предмет"), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(h - 1, "Ошибка выдачи предмета!", 0xFF0000)
+    computer.beep(1000, 0.5)
+    return false
+end
+
+local function sellItems()
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    if pim.getInventoryName() ~= "pim" then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local totalEarned = 0
+    local itemsSold = 0
+    local inventory = pim.getAllStacks(0)
+    
+    for slot, item in pairs(inventory) do
+        if item then
+            local info = getItemInfo(item)
+            local shopItem = availableItems[info.key]
+            
+            if shopItem then
+                local amountToSell = item.qty
+                local earned = amountToSell * DEFAULT_SELL_PRICE
+                
+                -- Изъятие предметов у игрока
+                pim.pushItem("DOWN", slot, amountToSell)
+                
+                -- Начисление средств
+                playerBalance = playerBalance + earned
+                totalEarned = totalEarned + earned
+                itemsSold = itemsSold + amountToSell
+                
+                -- Обновляем количество в магазине
+                shopItem.amount = shopItem.amount + amountToSell
+            end
+        end
+    end
+    
+    if itemsSold > 0 then
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        center(h - 1, string.format("Продано %d предметов на сумму %d %s", 
+               itemsSold, totalEarned, CURRENCY_NAME), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(h - 1, "Нет предметов для продажи!", 0xFFFF00)
+    return false
+end
+
+-- Обработка событий
+local function handleEvent(eventName, ...)
+    local args = {...}
+    
+    if eventName == "interrupted" then
+        gpu.setBackground(defBG)
+        gpu.setForeground(defFG)
+        gpu.fill(1, 1, w, h, " ")
+        os.exit()
+        return true
+    end
+    
+    -- Вход/выход игрока
+    if eventName == "player_on" then
+        currentPlayer = args[1]
+        playerBalance = balances[currentPlayer] or 0
+        state = "MAIN"
+        drawMainScreen()
+    elseif eventName == "player_off" then
+        state = "GOODBYE"
+        goodbyeTimer = computer.uptime()
+        drawGoodbyeScreen()
+    end
+    
+    -- Обработка касаний
+    if eventName == "touch" and currentPlayer then
+        local _, x, y, button = ...
+        
+        -- Главный экран
+        if state == "MAIN" then
+            local centerX = math.floor(w/2)
+            -- Кнопка покупки
+            if y >= 16 and y <= 18 then
+                if x >= centerX - 35 and x <= centerX - 5 then
+                    state = "BUY"
+                    page = 1
+                    searchText = ""
+                    isSearching = false
+                    blinkState = true
+                    drawBuyScreen()
+                -- Кнопка продажи
+                elseif x >= centerX + 5 and x <= centerX + 35 then
+                    state = "SELL"
+                    drawSellScreen()
+                end
+            end
+            
+            -- Кнопка администрирования
+            if y == h and x >= w - 15 and x <= w then
+                state = "ADMIN"
+                drawAdminPanel()
+            end
+        end
+        
+        -- Экран покупки
+        if state == "BUY" then
+            -- Активация поиска при клике на строку поиска
+            if y == 3 and x >= 4 and x <= w - 4 then
+                isSearching = true
+                blinkState = true
+                lastBlinkTime = computer.uptime()
+                drawBuyScreen()
+            end
+            
+            -- Обработка кликов по товарам
+            local startY = 6  -- Начало списка товаров (после строки поиска и заголовков)
+            local startIdx = (page - 1) * itemsPerPage + 1
+            local endIdx = math.min(startIdx + itemsPerPage - 1, #shopItems)
+            
+            for idx = startIdx, endIdx do
+                local shopItem = shopItems[idx]
+                local itemIndex = idx - startIdx + 1  -- индекс на странице, начиная с 1
+                local itemY = startY + itemIndex + 1  -- координата Y строки товара (с учетом заголовков)
+                
+                if y == itemY and x >= 3 and x <= w-2 then
+                    computer.beep(1500, 0.1)
+                    selectedItem = shopItem.item
+                    quantityInput = "1"
+                    state = "BUY_ITEM"
+                    drawBuyItemScreen()
+                    return
+                end
+            end
+            
+            -- Навигация
+            if y >= h - 2 and y <= h then
+                if x >= 5 and x <= 15 and page > 1 then
+                    page = page - 1
+                    drawBuyScreen()
+                elseif x >= w - 15 and x <= w - 5 and #shopItems > page * itemsPerPage then
+                    page = page + 1
+                    drawBuyScreen()
+                end
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                searchText = ""
+                isSearching = false
+                drawMainScreen()
+            end
+        end
+        
+        -- Экран выбора количества
+        if state == "BUY_ITEM" then
+            -- Обработка клавиатуры калькулятора
+            local keys = {
+                {x1=5, y1=11, x2=9, y2=12, value="7"},
+                {x1=11, y1=11, x2=15, y2=12, value="8"},
+                {x1=17, y1=11, x2=21, y2=12, value="9"},
+                {x1=5, y1=14, x2=9, y2=15, value="4"},
+                {x1=11, y1=14, x2=15, y2=15, value="5"},
+                {x1=17, y1=14, x2=21, y2=15, value="6"},
+                {x1=5, y1=17, x2=9, y2=18, value="1"},
+                {x1=11, y1=17, x2=15, y2=18, value="2"},
+                {x1=17, y1=17, x2=21, y2=18, value="3"},
+                {x1=5, y1=20, x2=9, y2=21, value="0"},
+                {x1=11, y1=20, x2=15, y2=21, value="C"},
+                {x1=17, y1=20, x2=21, y2=21, value="←"}
+            }
+            
+            for _, key in ipairs(keys) do
+                if y >= key.y1 and y <= key.y2 and x >= key.x1 and x <= key.x2 then
+                    if key.value == "C" then
+                        quantityInput = "0"
+                    elseif key.value == "←" then
+                        if #quantityInput > 0 then
+                            quantityInput = quantityInput:sub(1, -2)
+                        end
+                        if quantityInput == "" then
+                            quantityInput = "0"
+                        end
+                    else
+                        -- Убраны ограничения на ввод чисел
+                        if quantityInput == "0" then
+                            quantityInput = key.value
+                        else
+                            quantityInput = quantityInput .. key.value
+                        end
+                    end
+                    drawBuyItemScreen()
+                    return
+                end
+            end
+            
+            -- Кнопка покупки
+            if y >= 20 and y <= 22 and x >= 5 and x <= 19 then
+                local quantity = tonumber(quantityInput) or 0
+                if quantity > 0 then
+                    if buyItem(selectedItem.key, quantity) then
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            end
+            
+            -- Кнопка отмены
+            if y >= 20 and y <= 22 and x >= 25 and x <= 39 then
+                state = "BUY"
+                drawBuyScreen()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Экран продажи
+        if state == "SELL" then
+            if y >= 8 and y <= 10 and x >= 30 and x <= 50 then
+                sellItems()
+                os.sleep(1)
+                drawSellScreen()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Админ-панель
+        if state == "ADMIN" then
+            if y >= 5 and y <= 7 and x >= 5 and x <= 25 then
+                -- Обновление ME системы
+                center(h - 1, "Обновление информации...", 0xFFFF00)
+                availableItems = getAvailableItems()
+                lastScanTime = os.time()
+                center(h - 1, "Информация обновлена!", 0x00FF00)
+                drawAdminPanel()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+    end
+    
+    -- Обработка клавиатуры
+    if eventName == "key_down" and currentPlayer then
+        local _, char, code = ...
+        
+        -- Быстрые клавиши в главном меню
+        if state == "MAIN" then
+            if char == 49 or code == 2 then -- 1
+                state = "BUY"
+                page = 1
+                searchText = ""
+                isSearching = false
+                blinkState = true
+                drawBuyScreen()
+            elseif char == 50 or code == 3 then -- 2
+                state = "SELL"
+                drawSellScreen()
+            elseif char == 51 or code == 4 then -- 3
+                state = "ADMIN"
+                drawAdminPanel()
+            end
+        end
+        
+        -- Навигация в меню покупки
+        if state == "BUY" then
+            if char == 27 then -- ESC
+                state = "MAIN"
+                searchText = ""
+                isSearching = false
+                drawMainScreen()
+            elseif char == 97 or code == 30 then -- A/Left
+                if page > 1 then
+                    page = page - 1
+                    drawBuyScreen()
+                end
+            elseif char == 100 or code == 32 then -- D/Right
+                if #shopItems > page * itemsPerPage then
+                    page = page + 1
+                    drawBuyScreen()
+                end
+            end
+            
+            -- Активация/деактивация поиска
+            if char == 102 or code == 33 then -- F key
+                isSearching = not isSearching
+                blinkState = true
+                lastBlinkTime = computer.uptime()
+                drawBuyScreen()
+            end
+            
+            -- Ввод текста поиска
+            if isSearching then
+                if char then
+                    -- Буквы и цифры
+                    if (char >= 65 and char <= 90) or   -- A-Z
+                       (char >= 97 and char <= 122) or  -- a-z
+                       (char >= 48 and char <= 57) or   -- 0-9
+                       char == 32 then                  -- Space
+                        searchText = searchText .. string.char(char)
+                        page = 1
+                        blinkState = true
+                        lastBlinkTime = computer.uptime()
+                        drawBuyScreen()
+                    -- Backspace
+                    elseif char == 8 then
+                        searchText = searchText:sub(1, -2)
+                        page = 1
+                        blinkState = true
+                        lastBlinkTime = computer.uptime()
+                        drawBuyScreen()
+                    -- Enter - завершение поиска
+                    elseif char == 13 then
+                        isSearching = false
+                        drawBuyScreen()
+                    -- Escape - очистка и выход
+                    elseif char == 27 then
+                        searchText = ""
+                        isSearching = false
+                        page = 1
+                        drawBuyScreen()
+                    end
+                end
+            end
+        end
+        
+        -- Ввод количества на экране покупки
+        if state == "BUY_ITEM" then
+            if char >= 48 and char <= 57 then -- Цифры 0-9
+                if quantityInput == "0" then
+                    quantityInput = string.char(char)
+                else
+                    quantityInput = quantityInput .. string.char(char)
+                end
+                drawBuyItemScreen()
+            elseif char == 8 then -- Backspace
+                if #quantityInput > 0 then
+                    quantityInput = quantityInput:sub(1, -2)
+                end
+                if quantityInput == "" then
+                    quantityInput = "0"
+                end
+                drawBuyItemScreen()
+            elseif char == 13 then -- Enter
+                local quantity = tonumber(quantityInput) or 0
+                if quantity > 0 then
+                    if buyItem(selectedItem.key, quantity) then
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            elseif char == 27 then -- ESC
+                state = "BUY"
+                drawBuyScreen()
+            end
+        end
+        
+        -- Возврат в главное меню
+        if char == 113 or code == 16 then -- Q
+            state = "MAIN"
+            searchText = ""
+            isSearching = false
+            drawMainScreen()
+        end
+    end
+end
+
+-- Основной цикл
+local function main()
+    -- Инициализация
+    gpu.setBackground(defBG)
+    gpu.setForeground(defFG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    center(math.floor(h/2), "Инициализация магазина FAFASTORE...", 0xFFFF00)
+    center(math.floor(h/2)+1, "Загрузка данных...", 0xFFFF00)
+    
+    -- Загрузка данных
+    balances = loadBalances()
+    availableItems = getAvailableItems()
+    lastScanTime = os.time()
+    
+    -- Основные переменные
+    currentPlayer = nil
+    playerBalance = 0
+    shopItems = {}
+    state = "MAIN"
+    page = 1
+    itemsPerPage = 12
+    goodbyeTimer = 0
+    searchText = ""
+    isSearching = false
+    blinkState = true
+    lastBlinkTime = computer.uptime()
+    local blinkInterval = 0.5
+    
+    drawMainScreen()
+    
+    while true do
+        local e = {event.pull(0.1)}  -- Уменьшили таймаут для плавного мигания
+        
+        -- Обновление мигания курсора
+        local currentTime = computer.uptime()
+        if state == "BUY" and isSearching and (currentTime - lastBlinkTime) >= blinkInterval then
+            blinkState = not blinkState
+            lastBlinkTime = currentTime
+            drawBuyScreen()
+        end
+        
+        -- Проверка присутствия игрока
+        if currentPlayer and state ~= "GOODBYE" then
+            local invName = pim.getInventoryName()
+            if invName ~= currentPlayer then
+                state = "GOODBYE"
+                goodbyeTimer = computer.uptime()
+                drawGoodbyeScreen()
+            end
+        end
+        
+        -- Обработка таймера для экрана прощания
+        if state == "GOODBYE" then
+            local currentTime = computer.uptime()
+            local elapsed = currentTime - goodbyeTimer
+            
+            drawGoodbyeScreen()
+            
+            if elapsed >= 5 then
+                currentPlayer = nil
+                playerBalance = 0
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Обработка других событий
+        if e[1] then
+            handleEvent(table.unpack(e))
+        end
+    end
+end
+
+-- Запуск программы
+main()
