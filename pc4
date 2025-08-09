@@ -1191,6 +1191,7 @@ local function buyItem(itemKey, quantity)
     return false
 end
 
+-- ИСПРАВЛЕННАЯ ФУНКЦИЯ ПРОДАЖИ
 local function sellItems()
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
@@ -1212,7 +1213,8 @@ local function sellItems()
             local shopItem = availableItems[info.key]
             
             if shopItem then
-                local amountToSell = item.qty
+                -- ИСПРАВЛЕНИЕ: используем item.size вместо item.qty
+                local amountToSell = item.size
                 local earned = amountToSell * shopItem.sellPrice
                 
                 -- Изъятие предметов у игрока
