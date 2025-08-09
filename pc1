@@ -22,7 +22,6 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
-local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
 
@@ -819,12 +818,9 @@ local function drawMainScreen()
     -- Авторы магазина
     center(20, "Авторы магазина: fafagod1k и другие", 0xAAAAAA)
     
-    -- Кнопка администрирования
-    drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF)
-    
     -- Инструкция
     gpu.setForeground(0xAAAAAA)
-    gpu.set(1, h, "Стоя на PIM, используйте сенсорный экран или клавиши 1-3")
+    gpu.set(1, h, "Стоя на PIM, используйте сенсорный экран или клавиши 1-2")
 end
 
 -- Глобальные переменные для поиска
@@ -950,7 +946,7 @@ local function drawBuyScreen()
     -- Сортировка по названию
     table.sort(shopItems, function(a, b) 
         return (a.item.label or "ZZZ") < (b.item.label or "ZZZ")
-    end)
+    end
     
     local startY = searchY + 3  -- Начинаем ниже строки поиска
     local startIdx = (page - 1) * itemsPerPage + 1
@@ -1142,48 +1138,6 @@ local function drawSellScreen()
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
-local function drawAdminPanel()
-    gpu.setBackground(defBG)
-    gpu.fill(1, 1, w, h, " ")
-    
-    -- Шапка
-    gpu.setBackground(0x000000)
-    gpu.fill(1, 1, w, 1, " ")
-    center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
-    
-    -- Информация о игроке
-    if currentPlayer then
-        gpu.setForeground(0x00FF00)
-        gpu.set(2, 1, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
-    else
-        gpu.setForeground(0xFF0000)
-        gpu.set(2, 1, "Игрок не обнаружен")
-    end
-    
-    gpu.setBackground(defBG)
-    
-    gpu.setForeground(0xFF00FF)
-    center(3, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
-    
-    -- Кнопки
-    drawButton(5, 5, 20, 3, "Обновить базу", 0xF5DEB3, 0x000000)
-    
-    -- Статистика
-    gpu.setForeground(0x00FF00)
-    gpu.set(5, 9, "Статистика магазина:")
-    
-    local itemCount = 0
-    for _ in pairs(availableItems) do itemCount = itemCount + 1 end
-    
-    gpu.setForeground(0xFFFFFF)
-    gpu.set(5, 11, "Доступно предметов: " .. itemCount)
-    gpu.set(5, 12, "Последнее обновление: " .. os.date("%H:%M:%S", lastScanTime))
-    
-    -- Кнопка возврата
-    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
-end
-
 -- Логика магазина
 local function buyItem(itemKey, quantity)
     if not currentPlayer then
@@ -1304,6 +1258,11 @@ local function handleEvent(eventName, ...)
     if eventName == "player_on" then
         currentPlayer = args[1]
         playerBalance = balances[currentPlayer] or 0
+        
+        -- ОБНОВЛЕНИЕ СИСТЕМЫ ПРИ КАЖДОМ ВХОДЕ ИГРОКА
+        availableItems = getAvailableItems()
+        lastScanTime = os.time()
+        
         state = "MAIN"
         drawMainScreen()
     elseif eventName == "player_off" then
@@ -1333,12 +1292,6 @@ local function handleEvent(eventName, ...)
                     state = "SELL"
                     drawSellScreen()
                 end
-            end
-            
-            -- Кнопка администрирования
-            if y == h and x >= w - 15 and x <= w then
-                state = "ADMIN"
-                drawAdminPanel()
             end
         end
         
@@ -1472,24 +1425,6 @@ local function handleEvent(eventName, ...)
                 drawMainScreen()
             end
         end
-        
-        -- Админ-панель
-        if state == "ADMIN" then
-            if y >= 5 and y <= 7 and x >= 5 and x <= 25 then
-                -- Обновление ME системы
-                center(h - 1, "Обновление информации...", 0xFFFF00)
-                availableItems = getAvailableItems()
-                lastScanTime = os.time()
-                center(h - 1, "Информация обновлена!", 0x00FF00)
-                drawAdminPanel()
-            end
-            
-            -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
-                state = "MAIN"
-                drawMainScreen()
-            end
-        end
     end
     
     -- Обработка клавиатуры
@@ -1508,9 +1443,6 @@ local function handleEvent(eventName, ...)
             elseif char == 50 or code == 3 then -- 2
                 state = "SELL"
                 drawSellScreen()
-            elseif char == 51 or code == 4 then -- 3
-                state = "ADMIN"
-                drawAdminPanel()
             end
         end
         
