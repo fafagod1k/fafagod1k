@@ -946,7 +946,7 @@ local function drawBuyScreen()
     -- Сортировка по названию
     table.sort(shopItems, function(a, b) 
         return (a.item.label or "ZZZ") < (b.item.label or "ZZZ")
-    end
+    end)
     
     local startY = searchY + 3  -- Начинаем ниже строки поиска
     local startIdx = (page - 1) * itemsPerPage + 1
@@ -1258,12 +1258,10 @@ local function handleEvent(eventName, ...)
     if eventName == "player_on" then
         currentPlayer = args[1]
         playerBalance = balances[currentPlayer] or 0
-        
-        -- ОБНОВЛЕНИЕ СИСТЕМЫ ПРИ КАЖДОМ ВХОДЕ ИГРОКА
+        state = "MAIN"
+        -- Обновляем информацию о МЭ системе
         availableItems = getAvailableItems()
         lastScanTime = os.time()
-        
-        state = "MAIN"
         drawMainScreen()
     elseif eventName == "player_off" then
         state = "GOODBYE"
@@ -1576,7 +1574,6 @@ local function main()
     isSearching = false
     blinkState = true
     lastBlinkTime = computer.uptime()
-    local blinkInterval = 0.5
     
     drawMainScreen()
     
