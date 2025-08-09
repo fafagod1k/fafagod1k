@@ -1,0 +1,1695 @@
+local unicode = require("unicode")
+local computer = require("computer")
+local com = require("component")
+local event = require("event")
+local fs = require("filesystem")
+local shell = require("shell")
+local serialization = require("serialization")
+
+-- Загрузка inspect.lua
+if not fs.exists("/lib/inspect.lua") then
+    shell.execute("wget -q https://raw.githubusercontent.com/kikito/inspect.lua/master/inspect.lua /lib/inspect.lua")
+end
+local inspect = require("inspect")
+
+-- Компоненты
+local me = com.isAvailable("me_interface") and com.me_interface or error("ME интерфейс не подключен")
+local pim = com.isAvailable("pim") and com.pim or error("PIM не подключен")
+local gpu = com.gpu
+local w, h = 80, 25
+gpu.setResolution(w, h)
+
+-- Константы
+local CURRENCY_NAME = "Эмы"
+local BALANCES_PATH = "balances.cfg"
+local ADMIN_USERS = {"fafagod1k"} -- Замените на ваш ник
+local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
+local DEFAULT_SELL_PRICE = 5  -- Цена продажи по умолчанию
+
+-- Цвета
+local defBG = 0x000000 -- черный
+local defFG = 0xFFFFFF -- белый
+local grayBG = 0x333333 -- серый фон
+local lightGrayBG = 0x444444 -- светло-серый
+local buttonBG = 0x555555 -- цвет кнопок калькулятора
+local buttonActiveBG = 0x777777 -- активная кнопка
+
+-- Корректные логотипы магазина
+local logoTop = [[
+███████╗ █████╗ ███████╗ █████╗ ███████╗████████╗ ██████╗ ██████╗ ███████╗
+██╔════╝██╔══██╗██╔════╝██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝
+█████╗  ███████║█████╗  ███████║███████╗   ██║   ██║   ██║██████╔╝█████╗  
+██╔══╝  ██╔══██║██╔══╝  ██╔══██║╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝  
+██║     ██║  ██║██║     ██║  ██║███████║   ██║   ╚██████╔╝██║  ██║███████╗
+╚═╝     ╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+]]
+
+local logoBottom = [[
+███╗   ███╗ ██████╗ ███████╗██╗  ██╗██╗██╗     ██╗     
+████╗ ████║██╔════╝ ██╔════╝██║ ██╔╝██║██║     ██║     
+██╔████╔██║██║      ███████╗█████╔╝ ██║██║     ██║     
+██║╚██╔╝██║██║      ╚════██║██╔═██╗ ██║██║     ██║     
+██║ ╚═╝ ██║╚██████╗ ███████║██║  ██╗██║███████╗███████╗
+╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
+]]
+
+-- Загрузка/сохранение балансов
+local function loadBalances()
+    if fs.exists(BALANCES_PATH) then
+        local file = io.open(BALANCES_PATH, "r")
+        local data = file:read("*a")
+        file:close()
+        return serialization.unserialize(data) or {}
+    end
+    return {}
+end
+
+local function saveBalances(balances)
+    local file = io.open(BALANCES_PATH, "w")
+    file:write(serialization.serialize(balances))
+    file:close()
+end
+
+-- Статический каталог предметов с русскими названиями
+local itemCatalog = {
+    ["AdvancedSolarPanel:asp_crafting_items@0"] = {label = "Саннарий", buyPrice = 15, sellPrice = 7},
+    ["AdvancedSolarPanel:BlockMolecularTransformer@0"] = {label = "Молекулярный преобразователь", buyPrice = 50, sellPrice = 25},
+    ["ae2stuff:Cable@0"] = {label = "Продвинутый кабель МЭ - Fluix", buyPrice = 12, sellPrice = 6},
+    ["ae2stuff:Grower@0"] = {label = "Камера роста кристаллов", buyPrice = 25, sellPrice = 12},
+    ["ae2stuff:Inscriber@0"] = {label = "Продвинутый высекатель", buyPrice = 30, sellPrice = 15},
+    ["ae2stuff:Visualiser@0"] = {label = "Инструмент визуализации сети", buyPrice = 18, sellPrice = 9},
+    ["ae2stuff:Wireless@0"] = {label = "Беспроводной соединитель", buyPrice = 40, sellPrice = 20},
+    ["ae2stuff:WirelessAdvanced@0"] = {label = "Продвинутый беспроводной соединитель", buyPrice = 60, sellPrice = 30},
+    ["ae2stuff:WirelessElite@0"] = {label = "Элитный беспроводной соединитель", buyPrice = 80, sellPrice = 40},
+    ["ae2stuff:WirelessKit@0"] = {label = "Комплект беспроводной установки", buyPrice = 35, sellPrice = 17},
+    ["ae2stuff:WirelessNano@0"] = {label = "Нано беспроводной соединитель", buyPrice = 100, sellPrice = 50},
+    ["ae2wct:infinityBoosterCard@0"] = {label = "Карта бесконечного ускорителя", buyPrice = 45, sellPrice = 22},
+    ["ae2wct:wirelessCraftingTerminal@0"] = {label = "Беспроводной верстак", buyPrice = 55, sellPrice = 27},
+    ["AFSU:AFSU@0"] = {label = "ЭХПФ", buyPrice = 200, sellPrice = 100},
+    ["appliedenergistics2:tile.BlockCellWorkbench@0"] = {label = "Верстак для ячеек", buyPrice = 30, sellPrice = 15},
+    ["appliedenergistics2:tile.BlockChargepad@0"] = {label = "Зарядник", buyPrice = 20, sellPrice = 10},
+    ["appliedenergistics2:tile.BlockChest@0"] = {label = "Сундук МЭ", buyPrice = 25, sellPrice = 12},
+    ["appliedenergistics2:tile.BlockChiller@0"] = {label = "Охладитель", buyPrice = 35, sellPrice = 17},
+    ["appliedenergistics2:tile.BlockCondenser@0"] = {label = "Конденсатор материи", buyPrice = 150, sellPrice = 75},
+    ["appliedenergistics2:tile.BlockController@0"] = {label = "Контроллер МЭ", buyPrice = 100, sellPrice = 50},
+    ["appliedenergistics2:tile.BlockCraftingMonitor@0"] = {label = "Монитор создания", buyPrice = 40, sellPrice = 20},
+    ["appliedenergistics2:tile.BlockCraftingStorage@0"] = {label = "1К Хранилище создания", buyPrice = 50, sellPrice = 25},
+    ["appliedenergistics2:tile.BlockCraftingUnit@0"] = {label = "Блок обработки создания", buyPrice = 45, sellPrice = 22},
+    ["appliedenergistics2:tile.BlockDenseEnergyCell@0"] = {label = "Плотная энергетическая ячейка", buyPrice = 70, sellPrice = 35},
+    ["appliedenergistics2:tile.BlockDrive@0"] = {label = "Накопитель МЭ", buyPrice = 60, sellPrice = 30},
+    ["appliedenergistics2:tile.BlockEnergyAcceptor@0"] = {label = "Приёмщик энергии", buyPrice = 30, sellPrice = 15},
+    ["appliedenergistics2:tile.BlockEnergyCell@0"] = {label = "Энергетическая ячейка", buyPrice = 40, sellPrice = 20},
+    ["appliedenergistics2:tile.BlockFluix@0"] = {label = "Блок флюикса", buyPrice = 15, sellPrice = 7},
+    ["appliedenergistics2:tile.BlockInscriber@0"] = {label = "Высекатель", buyPrice = 35, sellPrice = 17},
+    ["appliedenergistics2:tile.BlockInterface@0"] = {label = "Интерфейс МЭ", buyPrice = 40, sellPrice = 20},
+    ["appliedenergistics2:tile.BlockIOPort@0"] = {label = "МЭ порт ввода-вывода", buyPrice = 35, sellPrice = 17},
+    ["appliedenergistics2:tile.BlockMolecularAssembler@0"] = {label = "Молекулярный сборщик", buyPrice = 80, sellPrice = 40},
+    ["appliedenergistics2:tile.BlockQuantumLinkChamber@0"] = {label = "Камера квантовой связи МЭ", buyPrice = 120, sellPrice = 60},
+    ["appliedenergistics2:tile.BlockQuantumRing@0"] = {label = "Квантовое кольцо МЭ", buyPrice = 130, sellPrice = 65},
+    ["appliedenergistics2:tile.BlockQuartz@0"] = {label = "Блок истинного кварца", buyPrice = 20, sellPrice = 10},
+    ["appliedenergistics2:tile.BlockQuartzGlass@0"] = {label = "Кварцевое стекло", buyPrice = 15, sellPrice = 7},
+    ["appliedenergistics2:tile.BlockQuartzGrowthAccelerator@0"] = {label = "Ускоритель роста кристаллов", buyPrice = 50, sellPrice = 25},
+    ["appliedenergistics2:tile.BlockQuartzLamp@0"] = {label = "Заряженное кварцевое стекло", buyPrice = 18, sellPrice = 9},
+    ["appliedenergistics2:tile.BlockSecurity@0"] = {label = "Терминал безопасности МЭ", buyPrice = 45, sellPrice = 22},
+    ["appliedenergistics2:tile.BlockSkyCompass@0"] = {label = "Компас на метеорит", buyPrice = 25, sellPrice = 12},
+    ["appliedenergistics2:tile.BlockSkyStone@0"] = {label = "Небесный камень", buyPrice = 10, sellPrice = 5},
+    ["appliedenergistics2:tile.OreQuartz@0"] = {label = "Руда истинного кварца", buyPrice = 8, sellPrice = 4},
+    ["Avaritia:Dire_Crafting@0"] = {label = "Верстак Дайра", buyPrice = 300, sellPrice = 150},
+    ["BinnieCore:containerCylinder@0"] = {label = "Цилиндр с сырой ДНК", buyPrice = 20, sellPrice = 10},
+    ["BinnieCore:containerRefractory@0"] = {label = "Капсула с азотом", buyPrice = 15, sellPrice = 7},
+    ["Botany:database@0"] = {label = "База данных ботаника", buyPrice = 30, sellPrice = 15},
+    ["Botany:misc@0"] = {label = "Порошок массы", buyPrice = 5, sellPrice = 2},
+    ["Botany:pigment@0"] = {label = "Пигмент", buyPrice = 3, sellPrice = 1},
+    ["Botany:soilMeter@0"] = {label = "Измеритель почвы", buyPrice = 25, sellPrice = 12},
+    ["Botany:trowelDiamond@0"] = {label = "Алмазная лопатка", buyPrice = 40, sellPrice = 20},
+    ["BuildCraft|Core:diamondGearItem@0"] = {label = "Алмазная шестерня", buyPrice = 35, sellPrice = 17},
+    ["BuildCraft|Core:stoneGearItem@0"] = {label = "Каменная шестерня", buyPrice = 5, sellPrice = 2},
+    ["BuildCraft|Core:woodenGearItem@0"] = {label = "Деревянная шестерня", buyPrice = 2, sellPrice = 1},
+    ["BuildCraft|Core:wrenchItem@0"] = {label = "Гаечный ключ", buyPrice = 15, sellPrice = 7},
+    ["BuildCraft|Robotics:redstone_board@0"] = {label = "Плата красного камня", buyPrice = 12, sellPrice = 6},
+    ["BuildCraft|Silicon:laserBlock@0"] = {label = "Лазер", buyPrice = 50, sellPrice = 25},
+    ["BuildCraft|Silicon:laserTableBlock@0"] = {label = "Сборочный стол", buyPrice = 45, sellPrice = 22},
+    ["BuildCraft|Silicon:redstoneChipset@0"] = {label = "Набор красного камня", buyPrice = 10, sellPrice = 5},
+    ["BuildCraft|Transport:item.buildcraftPipe.pipefluidsvoid@0"] = {label = "Труба жидкости пустоты", buyPrice = 18, sellPrice = 9},
+    ["BuildCraft|Transport:item.buildcraftPipe.pipeitemsvoid@0"] = {label = "Транспортная труба пустоты", buyPrice = 18, sellPrice = 9},
+    ["BuildCraft|Transport:pipeGate@0"] = {label = "Базовая заслонка", buyPrice = 8, sellPrice = 4},
+    ["BuildCraft|Transport:pipeWaterproof@0"] = {label = "Уплотнитель труб", buyPrice = 5, sellPrice = 2},
+    ["BuildCraft|Transport:pipeWire@0"] = {label = "Красная проводка труб", buyPrice = 6, sellPrice = 3},
+    ["CarpentersBlocks:itemCarpentersChisel@0"] = {label = "Столярное долото", buyPrice = 10, sellPrice = 5},
+    ["CarpentersBlocks:itemCarpentersHammer@0"] = {label = "Столярный молоток", buyPrice = 12, sellPrice = 6},
+    ["chisel:chisel@0"] = {label = "Долото", buyPrice = 8, sellPrice = 4},
+    ["CompactSolars:CompactSolarBlock@0"] = {label = "Солнечная панель низкого напряжения", buyPrice = 35, sellPrice = 17},
+    ["customnpcs:npcDarkSpell@0"] = {label = "Тёмное заклинание", buyPrice = 45, sellPrice = 22},
+    ["customnpcs:npcDemonicIngot@0"] = {label = "Демонический слиток", buyPrice = 60, sellPrice = 30},
+    ["customnpcs:npcFireElement@0"] = {label = "Огненный элемент", buyPrice = 25, sellPrice = 12},
+    ["customnpcs:npcFireSpell@0"] = {label = "Огненное заклинание", buyPrice = 40, sellPrice = 20},
+    ["customnpcs:npcIceSpell@0"] = {label = "Ледяное заклинание", buyPrice = 40, sellPrice = 20},
+    ["customnpcs:npcMithrilIngot@0"] = {label = "Мифриловый слиток", buyPrice = 70, sellPrice = 35},
+    ["customnpcs:npcMoney@0"] = {label = "Деньги", buyPrice = 1, sellPrice = 0},
+    ["customnpcs:npcRuby@0"] = {label = "Рубин", buyPrice = 30, sellPrice = 15},
+    ["customnpcs:npcWaterElement@0"] = {label = "Водный элемент", buyPrice = 25, sellPrice = 12},
+    ["DraconicEvolution:awakenedCore@0"] = {label = "Пробуждённое ядро", buyPrice = 200, sellPrice = 100},
+    ["DraconicEvolution:draconicAxe@0"] = {label = "Драконий топор", buyPrice = 180, sellPrice = 90},
+    ["DraconicEvolution:draconicBoots@0"] = {label = "Драконий ботинки", buyPrice = 150, sellPrice = 75},
+    ["DraconicEvolution:draconicBow@0"] = {label = "Драконий лук", buyPrice = 160, sellPrice = 80},
+    ["DraconicEvolution:draconicChest@0"] = {label = "Драконий нагрудник", buyPrice = 170, sellPrice = 85},
+    ["DraconicEvolution:draconicCore@0"] = {label = "Ядро дракона", buyPrice = 190, sellPrice = 95},
+    ["DraconicEvolution:draconicDistructionStaff@0"] = {label = "Драконий посох силы", buyPrice = 220, sellPrice = 110},
+    ["DraconicEvolution:draconicHelm@0"] = {label = "Драконий шлем", buyPrice = 140, sellPrice = 70},
+    ["DraconicEvolution:draconicHoe@0"] = {label = "Драконий мотыга", buyPrice = 130, sellPrice = 65},
+    ["DraconicEvolution:draconicIngot@0"] = {label = "Слиток пробуждённого дракониума", buyPrice = 100, sellPrice = 50},
+    ["DraconicEvolution:draconicLeggs@0"] = {label = "Драконий поножи", buyPrice = 160, sellPrice = 80},
+    ["DraconicEvolution:draconicPickaxe@0"] = {label = "Драконий кирка", buyPrice = 170, sellPrice = 85},
+    ["DraconicEvolution:draconicShovel@0"] = {label = "Драконий лопата", buyPrice = 120, sellPrice = 60},
+    ["DraconicEvolution:draconicSword@0"] = {label = "Драконий меч", buyPrice = 180, sellPrice = 90},
+    ["DraconicEvolution:draconium@0"] = {label = "Дракониевый блок", buyPrice = 80, sellPrice = 40},
+    ["DraconicEvolution:draconiumDust@0"] = {label = "Пыль дракониума", buyPrice = 20, sellPrice = 10},
+    ["DraconicEvolution:draconiumEnergyCore@0"] = {label = "Энергоядро виверны", buyPrice = 120, sellPrice = 60},
+    ["DraconicEvolution:draconiumFluxCapacitor@0"] = {label = "Флюс-конденсатор виверны", buyPrice = 100, sellPrice = 50},
+    ["DraconicEvolution:draconiumIngot@0"] = {label = "Слиток дракониума", buyPrice = 60, sellPrice = 30},
+    ["DraconicEvolution:dragonHeart@0"] = {label = "Сердце дракона", buyPrice = 250, sellPrice = 125},
+    ["DraconicEvolution:energyCrystal@0"] = {label = "Энергетический реле", buyPrice = 90, sellPrice = 45},
+    ["DraconicEvolution:energyInfuser@0"] = {label = "Наполнитель энергии", buyPrice = 110, sellPrice = 55},
+    ["DraconicEvolution:infusedObsidian@0"] = {label = "Заряженный драконием обсидиан", buyPrice = 70, sellPrice = 35},
+    ["DraconicEvolution:playerDetectorAdvanced@0"] = {label = "Продвинутый детектор игроков", buyPrice = 50, sellPrice = 25},
+    ["DraconicEvolution:teleporterMKI@0"] = {label = "Амулет дисперсии", buyPrice = 130, sellPrice = 65},
+    ["DraconicEvolution:wyvernBow@0"] = {label = "Лук виверны", buyPrice = 120, sellPrice = 60},
+    ["DraconicEvolution:wyvernCore@0"] = {label = "Ядро виверны", buyPrice = 140, sellPrice = 70},
+    ["DraconicEvolution:wyvernHelm@0"] = {label = "Шлем виверны", buyPrice = 100, sellPrice = 50},
+    ["DraconicEvolution:wyvernPickaxe@0"] = {label = "Кирка виверны", buyPrice = 110, sellPrice = 55},
+    ["DraconicEvolution:wyvernShovel@0"] = {label = "Лопата виверны", buyPrice = 90, sellPrice = 45},
+    ["DraconicEvolution:wyvernSword@0"] = {label = "Меч виверны", buyPrice = 130, sellPrice = 65},
+    ["DragonsRadioMod:DragonsRadioTuner@0"] = {label = "Радиотюнер дракона", buyPrice = 75, sellPrice = 37},
+    ["dwcity:AdvancedMachine@0"] = {label = "Квантовый мех", buyPrice = 180, sellPrice = 90},
+    ["dwcity:Splitter@0"] = {label = "Солнечный рефлектор", buyPrice = 95, sellPrice = 47},
+    ["dwcity:ThoriumBlock@0"] = {label = "Ториевый блок", buyPrice = 65, sellPrice = 32},
+    ["dwcity:ThoriumBlock2@0"] = {label = "Блок радиоактивной стали", buyPrice = 70, sellPrice = 35},
+    ["dwcity:Torch2@0"] = {label = "Факел", buyPrice = 3, sellPrice = 1},
+    ["DwQuests:Gift@0"] = {label = "Эксклюзивные цветочки", buyPrice = 25, sellPrice = 12},
+    ["DwQuests:StarAtlas@0"] = {label = "Звёздный атлас", buyPrice = 55, sellPrice = 27},
+    ["EnderIO:blockAlloySmelter@0"] = {label = "Завод сплавов", buyPrice = 85, sellPrice = 42},
+    ["EnderIO:blockExperienceObelisk@0"] = {label = "Обелиск опыта", buyPrice = 120, sellPrice = 60},
+    ["EnderIO:blockFusedQuartz@0"] = {label = "Расплавленный кварц", buyPrice = 30, sellPrice = 15},
+    ["EnderIO:blockIngotStorage@0"] = {label = "Блок вибрирующего сплава", buyPrice = 40, sellPrice = 20},
+    ["EnderIO:blockKillerJoe@0"] = {label = "Убийца Джо", buyPrice = 95, sellPrice = 47},
+    ["EnderIO:blockSagMill@0"] = {label = "Дробитель", buyPrice = 75, sellPrice = 37},
+    ["EnderIO:blockSliceAndSplice@0"] = {label = "Отрубатель и сращиватель", buyPrice = 110, sellPrice = 55},
+    ["EnderIO:blockTravelAnchor@0"] = {label = "Якорь перемещения", buyPrice = 130, sellPrice = 65},
+    ["EnderIO:blockVacuumChest@0"] = {label = "Вакуумный сундук", buyPrice = 65, sellPrice = 32},
+    ["EnderIO:blockWirelessCharger@0"] = {label = "Беспроводная зарядка", buyPrice = 90, sellPrice = 45},
+    ["ExtraBees:dictionary@0"] = {label = "База данных пчеловода", buyPrice = 35, sellPrice = 17},
+    ["ExtraBees:hiveFrame.soul@0"] = {label = "Рамка души", buyPrice = 25, sellPrice = 12},
+    ["ExtraTrees:database@0"] = {label = "База данных лесовода", buyPrice = 35, sellPrice = 17},
+    ["ExtraTrees:databaseMoth@0"] = {label = "База данных лепидоптеролога", buyPrice = 35, sellPrice = 17},
+    ["ExtraTrees:food@0"] = {label = "Апельсин", buyPrice = 5, sellPrice = 2},
+    ["ExtraTrees:machine@0"] = {label = "Столяр", buyPrice = 60, sellPrice = 30},
+    ["ExtraTrees:misc@0"] = {label = "Стеклянная арматура", buyPrice = 15, sellPrice = 7},
+    ["extracells:certustank@0"] = {label = "Резервуар из истинного кварца", buyPrice = 45, sellPrice = 22},
+    ["extracells:ecbaseblock@0"] = {label = "МЭ жидкостный интерфейс", buyPrice = 50, sellPrice = 25},
+    ["extracells:fluidcrafter@0"] = {label = "МЭ жидкостный сборщик", buyPrice = 65, sellPrice = 32},
+    ["extracells:part.base@0"] = {label = "Шина хранения жидкостей МЭ", buyPrice = 30, sellPrice = 15},
+    ["extracells:pattern.fluid@0"] = {label = "Шаблон жидкости МЭ", buyPrice = 20, sellPrice = 10},
+    ["extracells:storage.component@0"] = {label = "256k компонент хранилища МЭ", buyPrice = 70, sellPrice = 35},
+    ["extracells:storage.fluid@0"] = {label = "МЭ 1k хранилище жидкостей", buyPrice = 55, sellPrice = 27},
+    ["extracells:storage.physical@0"] = {label = "МЭ 1024k хранилище", buyPrice = 150, sellPrice = 75},
+    ["extracells:terminal.universal.wireless@0"] = {label = "Беспроводной универсальный терминал", buyPrice = 120, sellPrice = 60},
+    ["Forestry:apatite@0"] = {label = "Апатит", buyPrice = 8, sellPrice = 4},
+    ["Forestry:armor.plateElectrum@0"] = {label = "Электрумовая кираса", buyPrice = 60, sellPrice = 30},
+    ["Forestry:armor.plateInvar@0"] = {label = "Инварная кираса", buyPrice = 55, sellPrice = 27},
+    ["Forestry:armor.plateNickel@0"] = {label = "Ферритовая кираса", buyPrice = 65, sellPrice = 32},
+    ["Forestry:armor.platePlatinum@0"] = {label = "Блестящая кираса", buyPrice = 80, sellPrice = 40},
+    ["Forestry:apicultureChest@0"] = {label = "Сундук пчеловода", buyPrice = 40, sellPrice = 20},
+    ["Forestry:beeCombs@0"] = {label = "Кипящий сот", buyPrice = 12, sellPrice = 6},
+    ["Forestry:beeDroneGE@0"] = {label = "Каменистый трутень", buyPrice = 25, sellPrice = 12},
+    ["Forestry:beeQueenGE@0"] = {label = "Квантовая королева", buyPrice = 100, sellPrice = 50},
+    ["Forestry:beePrincessGE@0"] = {label = "Квантовая принцесса", buyPrice = 80, sellPrice = 40},
+    ["Forestry:beealyzer@0"] = {label = "Анализатор пчёл", buyPrice = 35, sellPrice = 17},
+    ["Forestry:beeswax@0"] = {label = "Пчелиный воск", buyPrice = 10, sellPrice = 5},
+    ["Forestry:bucketEthanol@0"] = {label = "Ведро этанола", buyPrice = 25, sellPrice = 12},
+    ["Forestry:bucketHoney@0"] = {label = "Ведро мёда", buyPrice = 30, sellPrice = 15},
+    ["Forestry:bucketJuice@0"] = {label = "Ведро сока", buyPrice = 15, sellPrice = 7},
+    ["Forestry:bucketSeedOil@0"] = {label = "Ведро масла семян", buyPrice = 20, sellPrice = 10},
+    ["Forestry:butterflyGE@0"] = {label = "Морфо менелай", buyPrice = 40, sellPrice = 20},
+    ["Forestry:ceramicdye@0"] = {label = "Керамическая краска (чёрная)", buyPrice = 12, sellPrice = 6},
+    ["Forestry:chipsets@0"] = {label = "Базовая печатная плата", buyPrice = 18, sellPrice = 9},
+    ["Forestry:craftingMaterial@0"] = {label = "Тканый шёлк", buyPrice = 15, sellPrice = 7},
+    ["Forestry:factory@0"] = {label = "Плотник", buyPrice = 55, sellPrice = 27},
+    ["Forestry:factory2@0"] = {label = "Квантовый плотник", buyPrice = 120, sellPrice = 60},
+    ["Forestry:fertilizerCompound@0"] = {label = "Удобрение", buyPrice = 20, sellPrice = 10},
+    ["Forestry:frameImpregnated@0"] = {label = "Пропитанная рамка", buyPrice = 25, sellPrice = 12},
+    ["Forestry:frameProven@0"] = {label = "Проверенная рамка", buyPrice = 30, sellPrice = 15},
+    ["Forestry:frameUntreated@0"] = {label = "Необработанная рамка", buyPrice = 15, sellPrice = 7},
+    ["Forestry:grafter@0"] = {label = "Прививочный нож", buyPrice = 35, sellPrice = 17},
+    ["Forestry:hammer@0"] = {label = "Точная кувалда", buyPrice = 25, sellPrice = 12},
+    ["Forestry:honeyedSlice@0"] = {label = "Ломтик в меду", buyPrice = 10, sellPrice = 5},
+    ["Forestry:impregnatedCasing@0"] = {label = "Пропитанный корпус", buyPrice = 45, sellPrice = 22},
+    ["Forestry:lepidopterology@0"] = {label = "Сундук лепидоптеролога", buyPrice = 40, sellPrice = 20},
+    ["Forestry:milkbottle@0"] = {label = "Бутылка молока", buyPrice = 8, sellPrice = 4},
+    ["Forestry:minerBag@0"] = {label = "Рюкзак шахтёра", buyPrice = 50, sellPrice = 25},
+    ["Forestry:mulch@0"] = {label = "Мульча", buyPrice = 5, sellPrice = 2},
+    ["Forestry:naturalistHelmet@0"] = {label = "Очки", buyPrice = 30, sellPrice = 15},
+    ["Forestry:oakStick@0"] = {label = "Пропитанная палка", buyPrice = 8, sellPrice = 4},
+    ["Forestry:plastic.boots@0"] = {label = "Рубиновые тапочки Зельдо", buyPrice = 65, sellPrice = 32},
+    ["Forestry:plastic.raw@0"] = {label = "Сырой пластик", buyPrice = 12, sellPrice = 6},
+    ["Forestry:plastic.sheet@0"] = {label = "Пластиковые листы", buyPrice = 15, sellPrice = 7},
+    ["Forestry:pollen@0"] = {label = "Скопление пыльцы", buyPrice = 10, sellPrice = 5},
+    ["Forestry:pollenFertile@0"] = {label = "Пыльца яблоневого дуба", buyPrice = 12, sellPrice = 6},
+    ["Forestry:propolis@0"] = {label = "Прополис", buyPrice = 15, sellPrice = 7},
+    ["Forestry:record.blank@0"] = {label = "Чистая пластинка", buyPrice = 20, sellPrice = 10},
+    ["Forestry:refractoryEmpty@0"] = {label = "Тугоплавкая капсула", buyPrice = 18, sellPrice = 9},
+    ["Forestry:refractoryWax@0"] = {label = "Тугоплавкий воск", buyPrice = 22, sellPrice = 11},
+    ["Forestry:royalJelly@0"] = {label = "Маточное молочко", buyPrice = 40, sellPrice = 20},
+    ["Forestry:sapling@0"] = {label = "Саженец хлопкового дерева", buyPrice = 15, sellPrice = 7},
+    ["Forestry:scoop@0"] = {label = "Совок", buyPrice = 25, sellPrice = 12},
+    ["Forestry:solderingIron@0"] = {label = "Паяльник", buyPrice = 30, sellPrice = 15},
+    ["Forestry:spyglass@0"] = {label = "Подзорная труба", buyPrice = 35, sellPrice = 17},
+    ["Forestry:sturdyMachine@0"] = {label = "Прочный корпус", buyPrice = 50, sellPrice = 25},
+    ["Forestry:thermionicTubes@0"] = {label = "Медная электронная лампа", buyPrice = 25, sellPrice = 12},
+    ["Forestry:treealyzer@0"] = {label = "Анализатор деревьев", buyPrice = 35, sellPrice = 17},
+    ["Forestry:waxCapsule@0"] = {label = "Восковая капсула", buyPrice = 12, sellPrice = 6},
+    ["Forestry:woodPulp@0"] = {label = "Древесная масса", buyPrice = 8, sellPrice = 4},
+    ["Forestry:wrench@0"] = {label = "Гаечный ключ", buyPrice = 20, sellPrice = 10},
+    ["Genetics:analyst@0"] = {label = "Анализатор", buyPrice = 45, sellPrice = 22},
+    ["Genetics:database@0"] = {label = "База данных генов", buyPrice = 50, sellPrice = 25},
+    ["Genetics:misc@0"] = {label = "Упрочнённый корпус", buyPrice = 35, sellPrice = 17},
+    ["Genetics:registry@0"] = {label = "Реестр", buyPrice = 40, sellPrice = 20},
+    ["Genetics:serum@0"] = {label = "Сыворотка лесовода", buyPrice = 30, sellPrice = 15},
+    ["GraviSuite:advChainsaw@0"] = {label = "Продвинутая бензопила", buyPrice = 120, sellPrice = 60},
+    ["GraviSuite:advDDrill@0"] = {label = "Продвинутый алмазный бур", buyPrice = 150, sellPrice = 75},
+    ["GraviSuite:advJetpack@0"] = {label = "Продвинутый электрический реактивный ранец", buyPrice = 200, sellPrice = 100},
+    ["GraviSuite:advLappack@0"] = {label = "Продвинутый лаппак", buyPrice = 130, sellPrice = 65},
+    ["GraviSuite:advNanoChestPlate@0"] = {label = "Продвинутый нанонагрудник", buyPrice = 180, sellPrice = 90},
+    ["GraviSuite:advancedNightvisionGoggles@0"] = {label = "Продвинутые очки ночного видения", buyPrice = 95, sellPrice = 47},
+    ["GraviSuite:advancedQuantumHelmet@0"] = {label = "Продвинутый квантовый шлем", buyPrice = 160, sellPrice = 80},
+    ["GraviSuite:graviTool@0"] = {label = "ГравиИнструмент", buyPrice = 250, sellPrice = 125},
+    ["GraviSuite:itemSimpleItem@0"] = {label = "Суперпроводящее покрытие", buyPrice = 70, sellPrice = 35},
+    ["GraviSuite:relocator@0"] = {label = "Переместитель", buyPrice = 110, sellPrice = 55},
+    ["GraviSuite:ultimateLappack@0"] = {label = "Ультимативный лаппак", buyPrice = 190, sellPrice = 95},
+    ["GraviSuite:vajra@0"] = {label = "Ваджра", buyPrice = 300, sellPrice = 150},
+    ["IC2:blockAlloyGlass@0"] = {label = "Укреплённое стекло", buyPrice = 25, sellPrice = 12},
+    ["IC2:blockCrop@0"] = {label = "Жёрдочки", buyPrice = 15, sellPrice = 7},
+    ["IC2:blockElectric@0"] = {label = "Трансформатор НН", buyPrice = 45, sellPrice = 22},
+    ["IC2:blockGenerator@0"] = {label = "Генератор", buyPrice = 50, sellPrice = 25},
+    ["IC2:blockHeatGenerator@0"] = {label = "Электрический теплогенератор", buyPrice = 65, sellPrice = 32},
+    ["IC2:blockKineticGenerator@0"] = {label = "Кинетический ветрогенератор", buyPrice = 75, sellPrice = 37},
+    ["IC2:blockMachine@0"] = {label = "Основной корпус механизма", buyPrice = 40, sellPrice = 20},
+    ["IC2:blockMachine2@0"] = {label = "Телепортер", buyPrice = 150, sellPrice = 75},
+    ["IC2:blockMachine3@0"] = {label = "Паровой генератор", buyPrice = 85, sellPrice = 42},
+    ["IC2:blockPersonal@0"] = {label = "Личный сейф", buyPrice = 35, sellPrice = 17},
+    ["IC2:blockReactorChamber@0"] = {label = "Камера реактора", buyPrice = 90, sellPrice = 45},
+    ["IC2:blockReactorRedstonePort@0"] = {label = "Реакторный проводник красного камня", buyPrice = 55, sellPrice = 27},
+    ["IC2:blockreactorvessel@0"] = {label = "Реакторный корпус", buyPrice = 100, sellPrice = 50},
+    ["IC2:itemArmorAdvBatpack@0"] = {label = "Продвинутый бат-пак", buyPrice = 120, sellPrice = 60},
+    ["IC2:itemArmorAlloyChestplate@0"] = {label = "Композитный жилет", buyPrice = 130, sellPrice = 65},
+    ["IC2:itemArmorBatpack@0"] = {label = "Бат-пак", buyPrice = 80, sellPrice = 40},
+    ["IC2:itemArmorCFPack@0"] = {label = "УФ-рюкзак", buyPrice = 140, sellPrice = 70},
+    ["IC2:itemArmorEnergypack@0"] = {label = "Энерго-пак", buyPrice = 160, sellPrice = 80},
+    ["IC2:itemArmorJetpackElectric@0"] = {label = "Электрический реактивный ранец", buyPrice = 180, sellPrice = 90},
+    ["IC2:itemArmorNanoBoots@0"] = {label = "Ботинки нанокостюма", buyPrice = 150, sellPrice = 75},
+    ["IC2:itemArmorNanoChestplate@0"] = {label = "Бронежилет нанокостюма", buyPrice = 170, sellPrice = 85},
+    ["IC2:itemArmorNanoHelmet@0"] = {label = "Шлем нанокостюма", buyPrice = 140, sellPrice = 70},
+    ["IC2:itemArmorNanoLegs@0"] = {label = "Поножи нанокостюма", buyPrice = 160, sellPrice = 80},
+    ["IC2:itemArmorQuantumBoots@0"] = {label = "Ботинки квантового костюма", buyPrice = 200, sellPrice = 100},
+    ["IC2:itemArmorQuantumChestplate@0"] = {label = "Бронежилет квантового костюма", buyPrice = 220, sellPrice = 110},
+    ["IC2:itemArmorQuantumHelmet@0"] = {label = "Шлем квантового костюма", buyPrice = 190, sellPrice = 95},
+    ["IC2:itemArmorQuantumLegs@0"] = {label = "Поножи квантового костюма", buyPrice = 210, sellPrice = 105},
+    ["IC2:itemBatCrystal@0"] = {label = "Энергетический кристалл", buyPrice = 50, sellPrice = 25},
+    ["IC2:itemBatLamaCrystal@0"] = {label = "Лапотронный кристалл", buyPrice = 70, sellPrice = 35},
+    ["IC2:itemBatREDischarged@0"] = {label = "РЭ-батарея", buyPrice = 40, sellPrice = 20},
+    ["IC2:itemBatChargeAdv@0"] = {label = "Продвинутая зарядная батарея", buyPrice = 60, sellPrice = 30},
+    ["IC2:itemBatChargeCrystal@0"] = {label = "Зарядный энергокристалл", buyPrice = 55, sellPrice = 27},
+    ["IC2:itemBatChargeLamaCrystal@0"] = {label = "Зарядный лапотронный кристалл", buyPrice = 75, sellPrice = 37},
+    ["IC2:itemCable@0"] = {label = "Изолированный медный кабель", buyPrice = 8, sellPrice = 4},
+    ["IC2:itemCasing@0"] = {label = "Медный корпус для предмета", buyPrice = 15, sellPrice = 7},
+    ["IC2:itemCellEmpty@0"] = {label = "Пустая ячейка", buyPrice = 3, sellPrice = 1},
+    ["IC2:itemClayBall@0"] = {label = "Глина", buyPrice = 2, sellPrice = 1},
+    ["IC2:itemCofeeBeans@0"] = {label = "Кофейные зёрна", buyPrice = 10, sellPrice = 5},
+    ["IC2:itemCropnalyzer@0"] = {label = "Анализатор сельхозкультур", buyPrice = 35, sellPrice = 17},
+    ["IC2:itemDensePlates@0"] = {label = "Плотная медная пластина", buyPrice = 25, sellPrice = 12},
+    ["IC2:itemDust@0"] = {label = "Угольная пыль", buyPrice = 5, sellPrice = 2},
+    ["IC2:itemDust2@0"] = {label = "Алмазная пыль", buyPrice = 20, sellPrice = 10},
+    ["IC2:itemDustSmall@0"] = {label = "Маленькая кучка литиевой пыли", buyPrice = 15, sellPrice = 7},
+    ["IC2:itemFertilizer@0"] = {label = "Удобрение", buyPrice = 12, sellPrice = 6},
+    ["IC2:itemFreq@0"] = {label = "Передатчик частоты", buyPrice = 25, sellPrice = 12},
+    ["IC2:itemFuelPlantBall@0"] = {label = "Растительный шар", buyPrice = 18, sellPrice = 9},
+    ["IC2:itemGrinPowder@0"] = {label = "Порошок ухмылки", buyPrice = 22, sellPrice = 11},
+    ["IC2:itemHops@0"] = {label = "Хмель", buyPrice = 8, sellPrice = 4},
+    ["IC2:itemIngot@0"] = {label = "Медный слиток", buyPrice = 10, sellPrice = 5},
+    ["IC2:itemMOX@0"] = {label = "MOX ядерное топливо", buyPrice = 100, sellPrice = 50},
+    ["IC2:itemNanoSaber@0"] = {label = "Наносабля", buyPrice = 150, sellPrice = 75},
+    ["IC2:itemOreIridium@0"] = {label = "Иридиевая руда", buyPrice = 80, sellPrice = 40},
+    ["IC2:itemPartAlloy@0"] = {label = "Продвинутый сплав", buyPrice = 35, sellPrice = 17},
+    ["IC2:itemPartCarbonFibre@0"] = {label = "Сырое углеродное волокно", buyPrice = 45, sellPrice = 22},
+    ["IC2:itemPartCarbonMesh@0"] = {label = "Сырая углеродная сетка", buyPrice = 40, sellPrice = 20},
+    ["IC2:itemPartCarbonPlate@0"] = {label = "Углеродная пластина", buyPrice = 55, sellPrice = 27},
+    ["IC2:itemPartCFPowder@0"] = {label = "УФ-порошок", buyPrice = 30, sellPrice = 15},
+    ["IC2:itemPartCircuit@0"] = {label = "Электронная схема", buyPrice = 25, sellPrice = 12},
+    ["IC2:itemPartCircuitAdv@0"] = {label = "Продвинутая схема", buyPrice = 45, sellPrice = 22},
+    ["IC2:itemPartIridium@0"] = {label = "Упрочнённая иридиевая пластина", buyPrice = 120, sellPrice = 60},
+    ["IC2:itemPlates@0"] = {label = "Медная пластина", buyPrice = 12, sellPrice = 6},
+    ["IC2:itemPlutonium@0"] = {label = "Плутоний", buyPrice = 90, sellPrice = 45},
+    ["IC2:itemPlutoniumSmall@0"] = {label = "Маленькая кучка плутония", buyPrice = 40, sellPrice = 20},
+    ["IC2:itemRecipePart@0"] = {label = "Катушка", buyPrice = 15, sellPrice = 7},
+    ["IC2:itemRubber@0"] = {label = "Каучук", buyPrice = 8, sellPrice = 4},
+    ["IC2:itemScrap@0"] = {label = "Лом", buyPrice = 5, sellPrice = 2},
+    ["IC2:itemTritiumCell@0"] = {label = "Топливный стержень (тритиевый)", buyPrice = 110, sellPrice = 55},
+    ["IC2:itemUran@0"] = {label = "Обогащённое урановое ядерное топливо", buyPrice = 95, sellPrice = 47},
+    ["IC2:itemUran235small@0"] = {label = "Маленькая кучка урана-235", buyPrice = 50, sellPrice = 25},
+    ["IC2:itemUran238@0"] = {label = "Уран-238", buyPrice = 70, sellPrice = 35},
+    ["IC2:itemWeed@0"] = {label = "Сорняк", buyPrice = 1, sellPrice = 0},
+    ["IC2:itemWeedEx@0"] = {label = "Удалитель сорняков", buyPrice = 20, sellPrice = 10},
+    ["IC2:itemwcarbonrotor@0"] = {label = "Ротор кинетической коробки передач (углеродный)", buyPrice = 65, sellPrice = 32},
+    ["IC2:obscurator@0"] = {label = "Обскуратор", buyPrice = 30, sellPrice = 15},
+    ["IC2:reactorCondensator@0"] = {label = "КОНДЕНСАТОР RSH", buyPrice = 85, sellPrice = 42},
+    ["IC2:reactorCondensatorLap@0"] = {label = "КОНДЕНСАТОР LZH", buyPrice = 100, sellPrice = 50},
+    ["IC2:reactorCoolantSimple@0"] = {label = "Охлаждающая ячейка 10к", buyPrice = 40, sellPrice = 20},
+    ["IC2:reactorCoolantSix@0"] = {label = "Охлаждающая ячейка 60к", buyPrice = 120, sellPrice = 60},
+    ["IC2:reactorCoolantTriple@0"] = {label = "Охлаждающая ячейка 30к", buyPrice = 80, sellPrice = 40},
+    ["IC2:reactorHeatSwitch@0"] = {label = "Теплообменник", buyPrice = 55, sellPrice = 27},
+    ["IC2:reactorHeatSwitchCore@0"] = {label = "Теплообменник реактора", buyPrice = 65, sellPrice = 32},
+    ["IC2:reactorHeatSwitchDiamond@0"] = {label = "Продвинутый теплообменник", buyPrice = 90, sellPrice = 45},
+    ["IC2:reactorHeatSwitchSpread@0"] = {label = "Теплообменник компонента", buyPrice = 60, sellPrice = 30},
+    ["IC2:reactorLithiumCell@0"] = {label = "Топливный стержень (литиевый)", buyPrice = 100, sellPrice = 50},
+    ["IC2:reactorMOXDual@0"] = {label = "Двойной топливный стержень (MOX)", buyPrice = 150, sellPrice = 75},
+    ["IC2:reactorMOXQuad@0"] = {label = "Четверной топливный стержень (MOX)", buyPrice = 220, sellPrice = 110},
+    ["IC2:reactorMOXSimple@0"] = {label = "Топливный стержень (MOX)", buyPrice = 110, sellPrice = 55},
+    ["IC2:reactorPlating@0"] = {label = "Облицовка реактора", buyPrice = 45, sellPrice = 22},
+    ["IC2:reactorPlatingExplosive@0"] = {label = "Облицовка реактора сдержки", buyPrice = 60, sellPrice = 30},
+    ["IC2:reactorPlatingHeat@0"] = {label = "Облицовка реактора с теплоёмкостью", buyPrice = 50, sellPrice = 25},
+    ["IC2:reactorReflector@0"] = {label = "Нейтронный отражатель", buyPrice = 70, sellPrice = 35},
+    ["IC2:reactorReflectorThick@0"] = {label = "Толстый нейтронный отражатель", buyPrice = 100, sellPrice = 50},
+    ["IC2:reactorUraniumDual@0"] = {label = "Двойной топливный стержень (урановый)", buyPrice = 130, sellPrice = 65},
+    ["IC2:reactorUraniumQuad@0"] = {label = "Четверной топливный стержень (урановый)", buyPrice = 200, sellPrice = 100},
+    ["IC2:reactorUraniumSimple@0"] = {label = "Топливный стержень (урановый)", buyPrice = 90, sellPrice = 45},
+    ["IC2:reactorVent@0"] = {label = "Теплоотвод", buyPrice = 35, sellPrice = 17},
+    ["IC2:reactorVentCore@0"] = {label = "Теплоотвод реактора", buyPrice = 45, sellPrice = 22},
+    ["IC2:reactorVentDiamond@0"] = {label = "Продвинутый теплоотвод", buyPrice = 80, sellPrice = 40},
+    ["IC2:reactorVentGold@0"] = {label = "Разогнанный теплоотвод", buyPrice = 65, sellPrice = 32},
+    ["IC2:reactorVentSpread@0"] = {label = "Теплоотвод компонента", buyPrice = 40, sellPrice = 20},
+    ["IC2:tool.fishingRodDiamond@0"] = {label = "Алмазная удочка", buyPrice = 50, sellPrice = 25},
+    ["IC2:tool.swordElectrum@0"] = {label = "Электрумовый меч", buyPrice = 60, sellPrice = 30},
+    ["IC2:tool.swordInvar@0"] = {label = "Инварный меч", buyPrice = 55, sellPrice = 27},
+    ["IC2:tool.swordNickel@0"] = {label = "Ферритовый меч", buyPrice = 65, sellPrice = 32},
+    ["IC2:tool.swordPlatinum@0"] = {label = "Блестящий меч", buyPrice = 80, sellPrice = 40},
+    ["IC2:upgradeModule@0"] = {label = "Улучшение разгона", buyPrice = 45, sellPrice = 22},
+    ["IC2NuclearControl:blockNuclearControlMain@0"] = {label = "Датчик температуры", buyPrice = 55, sellPrice = 27},
+    ["IC2NuclearControl:ItemMultipleSensorKit@0"] = {label = "Набор счётного сенсора", buyPrice = 35, sellPrice = 17},
+    ["IC2NuclearControl:ItemMultipleSensorLocationCard@0"] = {label = "Карта локации счётного сенсора", buyPrice = 25, sellPrice = 12},
+    ["IC2NuclearControl:ItemRemoteSensorKit@0"] = {label = "Набор дистанционного сенсора", buyPrice = 40, sellPrice = 20},
+    ["IC2NuclearControl:ItemTextCard@0"] = {label = "Текстовая карта", buyPrice = 15, sellPrice = 7},
+    ["IC2NuclearControl:ItemToolDigitalThermometer@0"] = {label = "Цифровой термометр", buyPrice = 30, sellPrice = 15},
+    ["IC2NuclearControl:ItemToolThermometer@0"] = {label = "Термометр", buyPrice = 20, sellPrice = 10},
+    ["IC2NuclearControl:ItemUpgrade@0"] = {label = "Улучшение дальности", buyPrice = 25, sellPrice = 12},
+    ["IronChest:BlockIronChest@0"] = {label = "Железный сундук", buyPrice = 35, sellPrice = 17},
+    ["jgendustry:BeeReceptacle@0"] = {label = "Ёмкость для пчёл", buyPrice = 25, sellPrice = 12},
+    ["jgendustry:GeneSampleBlank@0"] = {label = "Пустой генный образец", buyPrice = 15, sellPrice = 7},
+    ["jgendustry:GeneTemplate@0"] = {label = "Генетический шаблон", buyPrice = 30, sellPrice = 15},
+    ["jgendustry:GeneticsProcessor@0"] = {label = "Генетический процессор", buyPrice = 45, sellPrice = 22},
+    ["jgendustry:imprinter@0"] = {label = "Генетический импринтер", buyPrice = 80, sellPrice = 40},
+    ["jgendustry:Labware@0"] = {label = "Лабораторная посуда для генетики", buyPrice = 20, sellPrice = 10},
+    ["jgendustry:mutagen_producer@0"] = {label = "Производитель мутагенов", buyPrice = 70, sellPrice = 35},
+    ["jgendustry:MutagenTank@0"] = {label = "Бак мутагена", buyPrice = 50, sellPrice = 25},
+    ["jgendustry:mutatron_adv@0"] = {label = "Продвинутый мутатрон", buyPrice = 150, sellPrice = 75},
+    ["jgendustry:PowerModule@0"] = {label = "Энергомодуль", buyPrice = 40, sellPrice = 20},
+    ["jgendustry:replicator@0"] = {label = "Генетический репликатор", buyPrice = 120, sellPrice = 60},
+    ["jgendustry:sampler@0"] = {label = "Генетический сэмплер", buyPrice = 65, sellPrice = 32},
+    ["jgendustry:transposer@0"] = {label = "Генетический транспозер", buyPrice = 85, sellPrice = 42},
+    ["LFEnderAdditions:itemAdvLiquidConduit@0"] = {label = "Мелодичный флюидопровод", buyPrice = 35, sellPrice = 17},
+    ["LFEnderAdditions:itemItemConduit@0"] = {label = "Продвинутый канал предметов", buyPrice = 30, sellPrice = 15},
+    ["luxinfineitems:AEAdvInterface@0"] = {label = "Улучшенный МЭ интерфейс", buyPrice = 75, sellPrice = 37},
+    ["luxinfineitems:AEAdvMolecularAssembler@0"] = {label = "Продвинутый молекулярный сборщик", buyPrice = 160, sellPrice = 80},
+    ["luxinfineitems:AECompressedSpeedCard@0"] = {label = "Продвинутая карта ускорения", buyPrice = 90, sellPrice = 45},
+    ["luxinfineitems:AECraftingSupplier@0"] = {label = "Поставщик уровней МЭ", buyPrice = 110, sellPrice = 55},
+    ["luxinfineitems:AEEcnodedExtendedPattern@0"] = {label = "Расширенный шаблон (закодированный)", buyPrice = 45, sellPrice = 22},
+    ["luxinfineitems:AEExtInterface@0"] = {label = "Расширенный интерфейс ЭЭ", buyPrice = 85, sellPrice = 42},
+    ["luxinfineitems:AEExtendedPattern@0"] = {label = "Расширенный шаблон", buyPrice = 30, sellPrice = 15},
+    ["luxinfineitems:AEUltInterface@0"] = {label = "Совершенный МЭ интерфейс", buyPrice = 130, sellPrice = 65},
+    ["luxinfineitems:advancedCraftingAccelerator@0"] = {label = "Узел крафта MK1", buyPrice = 95, sellPrice = 47},
+    ["luxinfineitems:advancedCraftingAccelerator1@0"] = {label = "Узел крафта MK4", buyPrice = 180, sellPrice = 90},
+    ["luxinfineitems:advancedCraftingStorage@0"] = {label = "Хранилище крафта MK1", buyPrice = 100, sellPrice = 50},
+    ["luxinfineitems:advancedDrive@0"] = {label = "Улучшенный МЭ накопитель", buyPrice = 120, sellPrice = 60},
+    ["luxinfineitems:advancedEnergyCell@0"] = {label = "Базовая энергоячейка", buyPrice = 80, sellPrice = 40},
+    ["luxinfineitems:advanced_portable_storage_cell_0@0"] = {label = "Продвинутая портативная ячейка", buyPrice = 110, sellPrice = 55},
+    ["luxinfineitems:advanced_portable_storage_cell_1@0"] = {label = "Гибридная портативная ячейка", buyPrice = 150, sellPrice = 75},
+    ["luxinfineitems:advanced_portable_storage_cell_2@0"] = {label = "Ультимативная портативная ячейка", buyPrice = 200, sellPrice = 100},
+    ["luxinfineitems:autoLampFabric@0"] = {label = "Производитель ламп МЭ", buyPrice = 95, sellPrice = 47},
+    ["luxinfineitems:autoProcessorPress@0"] = {label = "Пресс процессоров МЭ", buyPrice = 105, sellPrice = 52},
+    ["luxinfineitems:autoQuartzCharger@0"] = {label = "МЭ Зарядник кварца", buyPrice = 85, sellPrice = 42},
+    ["luxinfineitems:autoQuartzGrower@0"] = {label = "Камера мгновенного роста кристаллов", buyPrice = 130, sellPrice = 65},
+    ["luxinfineitems:CompressedCPU@0"] = {label = "Контроллер автокрафта", buyPrice = 140, sellPrice = 70},
+    ["luxinfineitems:ExtremeAEAutocraft@0"] = {label = "Экстремальный молекулярный сборщик", buyPrice = 250, sellPrice = 125},
+    ["luxinfineitems:ExtendedPatternsEncoder@0"] = {label = "Расширенный кодировщик шаблонов", buyPrice = 65, sellPrice = 32},
+    ["luxinfineitems:squareEnergyCharger@0"] = {label = "Промышленная зарядная станция", buyPrice = 150, sellPrice = 75},
+    ["luxinfineitems:TEAugment@0"] = {label = "Улучшение: Фазовый резонатор", buyPrice = 90, sellPrice = 45},
+    ["metadrive:block_advanced_carpenter@0"] = {label = "Продвинутый плотник", buyPrice = 95, sellPrice = 47},
+    ["metadrive:block_advanced_centrifuge@0"] = {label = "Продвинутая центрифуга", buyPrice = 110, sellPrice = 55},
+    ["metadrive:block_advanced_extractor@0"] = {label = "Продвинутый экстрактор", buyPrice = 105, sellPrice = 52},
+    ["metadrive:block_advanced_liquifier@0"] = {label = "Продвинутый сжижитель", buyPrice = 115, sellPrice = 57},
+    ["metadrive:block_cobblestone_generator@0"] = {label = "Генератор булыжника", buyPrice = 65, sellPrice = 32},
+    ["metadrive:block_energy_generator_rtg@0"] = {label = "RTG генератор энергии", buyPrice = 180, sellPrice = 90},
+    ["metadrive:block_reactor_coolant_injector@0"] = {label = "Инжектор охлаждающей жидкости", buyPrice = 120, sellPrice = 60},
+    ["metadrive:neptunium_condensator@0"] = {label = "Конденсатор нептуния", buyPrice = 130, sellPrice = 65},
+    ["metadrive:palladium_condensator@0"] = {label = "Конденсатор палладия", buyPrice = 140, sellPrice = 70},
+    ["MineFactoryReloaded:bucket.essence@0"] = {label = "Ведро сущности", buyPrice = 25, sellPrice = 12},
+    ["MineFactoryReloaded:bucket.meat@0"] = {label = "Ведро мяса", buyPrice = 30, sellPrice = 15},
+    ["MineFactoryReloaded:bucket.pinkslime@0"] = {label = "Ведро розовой слизи", buyPrice = 35, sellPrice = 17},
+    ["MineFactoryReloaded:bucket.sewage@0"] = {label = "Ведро сточных вод", buyPrice = 15, sellPrice = 7},
+    ["MineFactoryReloaded:conveyor@0"] = {label = "Конвейерная лента (красная)", buyPrice = 20, sellPrice = 10},
+    ["MineFactoryReloaded:machine.0@0"] = {label = "Сажалка", buyPrice = 65, sellPrice = 32},
+    ["MineFactoryReloaded:machine.1@0"] = {label = "Выбрасыватель", buyPrice = 60, sellPrice = 30},
+    ["MineFactoryReloaded:machine.2@0"] = {label = "Автонаковальня", buyPrice = 75, sellPrice = 37},
+    ["MineFactoryReloaded:rubberwood.sapling@0"] = {label = "Саженец гевеи", buyPrice = 15, sellPrice = 7},
+    ["MineFactoryReloaded:safarinet.jailer@0"] = {label = "Сафари-сеть тюремщика", buyPrice = 45, sellPrice = 22},
+    ["MineFactoryReloaded:safarinet.launcher@0"] = {label = "Запускатель сафари-сетей", buyPrice = 55, sellPrice = 27},
+    ["MineFactoryReloaded:safarinet.reusable@0"] = {label = "Сафари-сеть (многоразовая)", buyPrice = 35, sellPrice = 17},
+    ["MineFactoryReloaded:safarinet.singleuse@0"] = {label = "Сафари-сеть (одноразовая)", buyPrice = 20, sellPrice = 10},
+    ["MineFactoryReloaded:upgrade.radius@0"] = {label = "Улучшение (медное)", buyPrice = 25, sellPrice = 12},
+    ["minecraft:anvil@0"] = {label = "Наковальня", buyPrice = 70, sellPrice = 35},
+    ["minecraft:arrow@0"] = {label = "Стрела", buyPrice = 3, sellPrice = 1},
+    ["minecraft:bookshelf@0"] = {label = "Книжная полка", buyPrice = 25, sellPrice = 12},
+    ["minecraft:brewing_stand@0"] = {label = "Варочная стойка", buyPrice = 40, sellPrice = 20},
+    ["minecraft:brown_mushroom@0"] = {label = "Гриб", buyPrice = 5, sellPrice = 2},
+    ["minecraft:bucket@0"] = {label = "Ведро", buyPrice = 10, sellPrice = 5},
+    ["minecraft:cactus@0"] = {label = "Кактус", buyPrice = 5, sellPrice = 2},
+    ["minecraft:cauldron@0"] = {label = "Котёл", buyPrice = 30, sellPrice = 15},
+    ["minecraft:chest@0"] = {label = "Сундук", buyPrice = 15, sellPrice = 7},
+    ["minecraft:clay@0"] = {label = "Глина", buyPrice = 5, sellPrice = 2},
+    ["minecraft:clay_ball@0"] = {label = "Глина", buyPrice = 1, sellPrice = 0},
+    ["minecraft:coal@0"] = {label = "Уголь", buyPrice = 8, sellPrice = 4},
+    ["minecraft:coal_block@0"] = {label = "Угольный блок", buyPrice = 40, sellPrice = 20},
+    ["minecraft:diamond@0"] = {label = "Алмаз", buyPrice = 50, sellPrice = 25},
+    ["minecraft:dragon_egg@0"] = {label = "Яйцо дракона", buyPrice = 500, sellPrice = 250},
+    ["minecraft:dye@0"] = {label = "Чернильный мешок", buyPrice = 10, sellPrice = 5},
+    ["minecraft:egg@0"] = {label = "Яйцо", buyPrice = 5, sellPrice = 2},
+    ["minecraft:emerald@0"] = {label = "Изумруд", buyPrice = 55, sellPrice = 27},
+    ["minecraft:enchanted_table@0"] = {label = "Стол зачарования", buyPrice = 100, sellPrice = 50},
+    ["minecraft:ender_chest@0"] = {label = "Эндер-сундук", buyPrice = 80, sellPrice = 40},
+    ["minecraft:ender_eye@0"] = {label = "Око Эндера", buyPrice = 25, sellPrice = 12},
+    ["minecraft:ender_pearl@0"] = {label = "Жемчуг Края", buyPrice = 20, sellPrice = 10},
+    ["minecraft:feather@0"] = {label = "Перо", buyPrice = 3, sellPrice = 1},
+    ["minecraft:fermented_spider_eye@0"] = {label = "Маринованный паучий глаз", buyPrice = 15, sellPrice = 7},
+    ["minecraft:fishing_rod@0"] = {label = "Удочка", buyPrice = 12, sellPrice = 6},
+    ["minecraft:flint_and_steel@0"] = {label = "Огниво", buyPrice = 15, sellPrice = 7},
+    ["minecraft:ghast_tear@0"] = {label = "Слеза гаста", buyPrice = 30, sellPrice = 15},
+    ["minecraft:glowstone@0"] = {label = "Светокамень", buyPrice = 20, sellPrice = 10},
+    ["minecraft:glowstone_dust@0"] = {label = "Светопыль", buyPrice = 8, sellPrice = 4},
+    ["minecraft:gold_nugget@0"] = {label = "Золотой самородок", buyPrice = 3, sellPrice = 1},
+    ["minecraft:gravel@0"] = {label = "Гравий", buyPrice = 3, sellPrice = 1},
+    ["minecraft:gunpowder@0"] = {label = "Порох", buyPrice = 8, sellPrice = 4},
+    ["minecraft:ice@0"] = {label = "Лёд", buyPrice = 5, sellPrice = 2},
+    ["minecraft:lava_bucket@0"] = {label = "Ведро лавы", buyPrice = 25, sellPrice = 12},
+    ["minecraft:lever@0"] = {label = "Рычаг", buyPrice = 5, sellPrice = 2},
+    ["minecraft:log@0"] = {label = "Дуб", buyPrice = 10, sellPrice = 5},
+    ["minecraft:magma_cream@0"] = {label = "Сгусток магмы", buyPrice = 25, sellPrice = 12},
+    ["minecraft:milk_bucket@0"] = {label = "Ведро молока", buyPrice = 15, sellPrice = 7},
+    ["minecraft:nether_star@0"] = {label = "Адская звезда", buyPrice = 400, sellPrice = 200},
+    ["minecraft:nether_wart@0"] = {label = "Адский нарост", buyPrice = 12, sellPrice = 6},
+    ["minecraft:obsidian@0"] = {label = "Обсидиан", buyPrice = 25, sellPrice = 12},
+    ["minecraft:paper@0"] = {label = "Бумага", buyPrice = 3, sellPrice = 1},
+    ["minecraft:piston@0"] = {label = "Поршень", buyPrice = 30, sellPrice = 15},
+    ["minecraft:planks@0"] = {label = "Дубовые доски", buyPrice = 3, sellPrice = 1},
+    ["minecraft:poisonous_potato@0"] = {label = "Ядовитый картофель", buyPrice = 2, sellPrice = 1},
+    ["minecraft:pumpkin@0"] = {label = "Тыква", buyPrice = 15, sellPrice = 7},
+    ["minecraft:red_mushroom@0"] = {label = "Мухомор", buyPrice = 5, sellPrice = 2},
+    ["minecraft:redstone@0"] = {label = "Красная пыль", buyPrice = 8, sellPrice = 4},
+    ["minecraft:redstone_block@0"] = {label = "Блок красного камня", buyPrice = 40, sellPrice = 20},
+    ["minecraft:redstone_torch@0"] = {label = "Красный факел", buyPrice = 10, sellPrice = 5},
+    ["minecraft:repeater@0"] = {label = "Повторитель красного камня", buyPrice = 15, sellPrice = 7},
+    ["minecraft:reeds@0"] = {label = "Сахарный тростник", buyPrice = 5, sellPrice = 2},
+    ["minecraft:sapling@0"] = {label = "Саженец дуба", buyPrice = 5, sellPrice = 2},
+    ["minecraft:shears@0"] = {label = "Ножницы", buyPrice = 12, sellPrice = 6},
+    ["minecraft:sign@0"] = {label = "Табличка", buyPrice = 10, sellPrice = 5},
+    ["minecraft:skull@0"] = {label = "Череп скелета", buyPrice = 30, sellPrice = 15},
+    ["minecraft:slime_ball@0"] = {label = "Сгусток слизи", buyPrice = 15, sellPrice = 7},
+    ["minecraft:snow@0"] = {label = "Снег", buyPrice = 2, sellPrice = 1},
+    ["minecraft:soul_sand@0"] = {label = "Песок душ", buyPrice = 10, sellPrice = 5},
+    ["minecraft:speckled_melon@0"] = {label = "Сверкающий арбуз", buyPrice = 25, sellPrice = 12},
+    ["minecraft:spider_eye@0"] = {label = "Паучий глаз", buyPrice = 10, sellPrice = 5},
+    ["minecraft:stick@0"] = {label = "Палка", buyPrice = 1, sellPrice = 0},
+    ["minecraft:sticky_piston@0"] = {label = "Липкий поршень", buyPrice = 35, sellPrice = 17},
+    ["minecraft:string@0"] = {label = "Нить", buyPrice = 3, sellPrice = 1},
+    ["minecraft:sugar@0"] = {label = "Сахар", buyPrice = 5, sellPrice = 2},
+    ["minecraft:tnt@0"] = {label = "ТНТ", buyPrice = 30, sellPrice = 15},
+    ["minecraft:water_bucket@0"] = {label = "Ведро воды", buyPrice = 10, sellPrice = 5},
+    ["minecraft:web@0"] = {label = "Паутина", buyPrice = 5, sellPrice = 2},
+    ["minecraft:wheat@0"] = {label = "Пшеница", buyPrice = 5, sellPrice = 2},
+    ["minecraft:wool@0"] = {label = "Шерсть", buyPrice = 8, sellPrice = 4},
+    ["OpenBlocks:elevator@0"] = {label = "Лифт", buyPrice = 35, sellPrice = 17},
+    ["OpenBlocks:epicEraser@0"] = {label = "Эпический ластик", buyPrice = 55, sellPrice = 27},
+    ["OpenBlocks:filledbucket@0"] = {label = "Ведро опыта", buyPrice = 60, sellPrice = 30},
+    ["OpenBlocks:sonicglasses@0"] = {label = "Звуковые очки", buyPrice = 45, sellPrice = 22},
+    ["OpenBlocks:technicolorGlasses@0"] = {label = "Удивительные техноцветные очки", buyPrice = 50, sellPrice = 25},
+    ["OpenComputers:adapter@0"] = {label = "Адаптер", buyPrice = 25, sellPrice = 12},
+    ["OpenComputers:assembler@0"] = {label = "Сборщик электроники", buyPrice = 95, sellPrice = 47},
+    ["OpenComputers:cable@0"] = {label = "Кабель", buyPrice = 8, sellPrice = 4},
+    ["OpenComputers:capacitor@0"] = {label = "Конденсатор", buyPrice = 35, sellPrice = 17},
+    ["OpenComputers:case1@0"] = {label = "Корпус компьютера (уровень 1)", buyPrice = 50, sellPrice = 25},
+    ["OpenComputers:case2@0"] = {label = "Корпус компьютера (уровень 2)", buyPrice = 70, sellPrice = 35},
+    ["OpenComputers:case3@0"] = {label = "Корпус компьютера (уровень 3)", buyPrice = 100, sellPrice = 50},
+    ["OpenComputers:charger@0"] = {label = "Зарядное устройство", buyPrice = 45, sellPrice = 22},
+    ["OpenComputers:disassembler@0"] = {label = "Демонтажник", buyPrice = 65, sellPrice = 32},
+    ["OpenComputers:diskDrive@0"] = {label = "Дисковод", buyPrice = 40, sellPrice = 20},
+    ["OpenComputers:eeprom@0"] = {label = "ЭСППЗУ", buyPrice = 30, sellPrice = 15},
+    ["OpenComputers:geolyzer@0"] = {label = "Геоанализатор", buyPrice = 80, sellPrice = 40},
+    ["OpenComputers:item@0"] = {label = "Анализатор", buyPrice = 35, sellPrice = 17},
+    ["OpenComputers:keyboard@0"] = {label = "Клавиатура", buyPrice = 25, sellPrice = 12},
+    ["OpenComputers:powerConverter@0"] = {label = "Преобразователь энергии", buyPrice = 55, sellPrice = 27},
+    ["OpenComputers:powerDistributor@0"] = {label = "Распределитель энергии", buyPrice = 60, sellPrice = 30},
+    ["OpenComputers:printer@0"] = {label = "3D-принтер", buyPrice = 75, sellPrice = 37},
+    ["OpenComputers:rack@0"] = {label = "Стойка", buyPrice = 90, sellPrice = 45},
+    ["OpenComputers:raid@0"] = {label = "RAID-массив", buyPrice = 120, sellPrice = 60},
+    ["OpenComputers:relay@0"] = {label = "Реле", buyPrice = 40, sellPrice = 20},
+    ["OpenComputers:screen3@0"] = {label = "Экран (уровень 3)", buyPrice = 85, sellPrice = 42},
+    ["OpenComputers:wrench@0"] = {label = "Гайко-отвёртка", buyPrice = 20, sellPrice = 10},
+    ["OpenPeripheral:pim@0"] = {label = "PIM", buyPrice = 150, sellPrice = 75},
+    ["OpenPeripheral:selector@0"] = {label = "Селектор предметов", buyPrice = 30, sellPrice = 15},
+    ["PowerUtils:BlockMain@0"] = {label = "Силовой конвертер", buyPrice = 65, sellPrice = 32},
+    ["PowerUtils:pu_storage_module@0"] = {label = "Модуль IC", buyPrice = 25, sellPrice = 12},
+    ["ProjRed|Core:projectred.core.part@0"] = {label = "Белый иллюминий", buyPrice = 12, sellPrice = 6},
+    ["ProjRed|Exploration:projectred.exploration.barrel@0"] = {label = "Бочка предметов", buyPrice = 35, sellPrice = 17},
+    ["ProjRed|Exploration:projectred.exploration.ore@0"] = {label = "Рубиновая руда", buyPrice = 25, sellPrice = 12},
+    ["ProjRed|Illumination:projectred.illumination.lamp@0"] = {label = "Инвертированная белая лампа", buyPrice = 30, sellPrice = 15},
+    ["ThermalDynamics:ThermalDynamics_0@0"] = {label = "Свинцовый флюсопровод", buyPrice = 20, sellPrice = 10},
+    ["ThermalDynamics:ThermalDynamics_16@0"] = {label = "Умеренный флюидопровод (непрозрачный)", buyPrice = 25, sellPrice = 12},
+    ["ThermalDynamics:ThermalDynamics_32@0"] = {label = "Канал предметов", buyPrice = 22, sellPrice = 11},
+    ["ThermalDynamics:ThermalDynamics_48@0"] = {label = "Структурный канал (непрозрачный)", buyPrice = 28, sellPrice = 14},
+    ["ThermalDynamics:ThermalDynamics_64@0"] = {label = "Виадук", buyPrice = 35, sellPrice = 17},
+    ["ThermalExpansion:Device@0"] = {label = "Аппарат приобретения", buyPrice = 85, sellPrice = 42},
+    ["ThermalExpansion:Frame@0"] = {label = "Рамка механизма", buyPrice = 15, sellPrice = 7},
+    ["ThermalExpansion:Glass@0"] = {label = "Закалённое стекло", buyPrice = 20, sellPrice = 10},
+    ["ThermalExpansion:Machine@0"] = {label = "Краснопечь (ультимативная)", buyPrice = 180, sellPrice = 90},
+    ["ThermalExpansion:Plate@0"] = {label = "Импульсная пластина", buyPrice = 12, sellPrice = 6},
+    ["ThermalExpansion:Tank@0"] = {label = "Резонирующий переносной бак", buyPrice = 65, sellPrice = 32},
+    ["ThermalFoundation:Ore@0"] = {label = "Ферритовая руда", buyPrice = 25, sellPrice = 12},
+    ["ThermalFoundation:armor.plateElectrum@0"] = {label = "Электрумовая кираса", buyPrice = 60, sellPrice = 30},
+    ["ThermalFoundation:armor.plateInvar@0"] = {label = "Инварная кираса", buyPrice = 55, sellPrice = 27},
+    ["ThermalFoundation:armor.plateNickel@0"] = {label = "Ферритовая кираса", buyPrice = 65, sellPrice = 32},
+    ["ThermalFoundation:armor.platePlatinum@0"] = {label = "Блестящая кираса", buyPrice = 80, sellPrice = 40},
+    ["ThermalFoundation:bucket@0"] = {label = "Ведро нестабильного красного камня", buyPrice = 30, sellPrice = 15},
+    ["ThermalFoundation:material@0"] = {label = "Пульверизированный уголь", buyPrice = 10, sellPrice = 5},
+    ["ThermalFoundation:tool.axeInvar@0"] = {label = "Инварный топор", buyPrice = 50, sellPrice = 25},
+    ["ThermalFoundation:tool.hoeCopper@0"] = {label = "Медная мотыга", buyPrice = 35, sellPrice = 17},
+    ["ThermalFoundation:tool.shearsPlatinum@0"] = {label = "Блестящие ножницы", buyPrice = 65, sellPrice = 32},
+    ["ThermalFoundation:tool.swordElectrum@0"] = {label = "Электрумовый меч", buyPrice = 60, sellPrice = 30},
+    ["ThermalFoundation:tool.swordInvar@0"] = {label = "Инварный меч", buyPrice = 55, sellPrice = 27},
+    ["ThermalFoundation:tool.swordNickel@0"] = {label = "Ферритовый меч", buyPrice = 65, sellPrice = 32},
+    ["ThermalFoundation:tool.swordPlatinum@0"] = {label = "Блестящий меч", buyPrice = 80, sellPrice = 40},
+    ["Ztones:diamondZane@0"] = {label = "Алмазный Зейн", buyPrice = 100, sellPrice = 50},
+    ["Ztones:ofanix@0"] = {label = "Офаникс", buyPrice = 90, sellPrice = 45}
+}
+
+-- Получение информации о предмете
+local function getItemInfo(item)
+    if not item or not item.name then 
+        return {label = "Неизвестный предмет", key = "unknown"}
+    end
+    
+    -- Формируем ключ
+    local key = item.name
+    local dmg = item.damage or item.dmg or 0
+    if dmg > 0 then
+        key = key .. ":" .. dmg
+    else
+        key = key .. "@0"  -- Используем @0 для предметов без урона
+    end
+    
+    -- Ищем в каталоге
+    local catalogItem = itemCatalog[key]
+    
+    return {
+        label = catalogItem and catalogItem.label or item.label or "Неизвестный предмет",
+        key = key
+    }
+end
+
+-- Сканирование ME системы для получения доступных предметов
+local function getAvailableItems()
+    local availableItems = {}
+    local itemsInME = me.getItemsInNetwork()
+    
+    for _, item in ipairs(itemsInME) do
+        if item and item.name then
+            local info = getItemInfo(item)
+            local catalogItem = itemCatalog[info.key]
+            
+            if catalogItem then
+                availableItems[info.key] = {
+                    label = catalogItem.label,
+                    buyPrice = catalogItem.buyPrice,
+                    sellPrice = catalogItem.sellPrice,
+                    amount = item.size
+                }
+            end
+        end
+    end
+    
+    return availableItems
+end
+
+-- Глобальные настройки GPU
+gpu.setBackground(defBG)
+gpu.setForeground(defFG)
+gpu.fill(1, 1, w, h, " ")
+
+-- Утилиты
+local function formatNumber(num)
+    if not num then return "0" end
+    if num < 1000 then
+        return tostring(math.floor(num))
+    end
+    
+    local symbols = {"тыс", "млн", "млрд", "трлн"}
+    local formattedNum = num
+    local symbolIndex = 1
+
+    while formattedNum >= 1000 and symbolIndex <= #symbols do
+        formattedNum = formattedNum / 1000
+        symbolIndex = symbolIndex + 1
+    end
+
+    if symbolIndex > 1 then
+        return string.format("%.1f %s", formattedNum, symbols[symbolIndex-1])
+    end
+
+    return tostring(math.floor(num))
+end
+
+-- Форматирование чисел с пробелами для разделения тысяч
+local function formatNumberWithSpaces(n)
+    local s = tostring(math.floor(n))
+    local res = ""
+    local count = 0
+    for i = #s, 1, -1 do
+        res = s:sub(i, i) .. res
+        count = count + 1
+        if count % 3 == 0 and i > 1 then
+            res = " " .. res
+        end
+    end
+    return res
+end
+
+local function center(y, text, color)
+    if not text then return end
+    color = color or defFG
+    gpu.setForeground(color)
+    local x = math.floor((w - unicode.len(text)) / 2)
+    gpu.set(x, y, text)
+    gpu.setForeground(defFG)
+end
+
+local function drawButton(x, y, width, height, text, bgColor, fgColor)
+    if not text then return end
+    local bg = bgColor or 0x333333
+    local fg = fgColor or 0xFFFFFF
+    
+    -- Сохраняем текущий фон
+    local oldBg = gpu.getBackground()
+    
+    gpu.setBackground(bg)
+    gpu.setForeground(fg)
+    gpu.fill(x, y, width, height, " ")
+    local textX = x + math.floor((width - unicode.len(text)) / 2)
+    local textY = y + math.floor(height/2)
+    gpu.set(textX, textY, text)
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(oldBg)
+    gpu.setForeground(defFG)
+    return x, y, x + width - 1, y + height - 1
+end
+
+-- Функция для отображения логотипа
+local function drawLogo()
+    -- Отображение надписи FAFASTORE
+    local topLines = {}
+    for line in logoTop:gmatch("[^\n]+") do
+        table.insert(topLines, line)
+    end
+    
+    local topStartY = 4
+    for i, line in ipairs(topLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x1E90FF) -- Синий (DodgerBlue)
+        gpu.set(x, topStartY + i - 1, line)
+    end
+    
+    -- Отображение надписи mcskill
+    local bottomLines = {}
+    for line in logoBottom:gmatch("[^\n]+") do
+        table.insert(bottomLines, line)
+    end
+    
+    local bottomStartY = topStartY + #topLines
+    for i, line in ipairs(bottomLines) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0x9370DB) -- Фиолетовый
+        gpu.set(x, bottomStartY + i - 1, line)
+    end
+    
+    gpu.setForeground(defFG)
+end
+
+-- Отрисовка экрана прощания
+local function drawGoodbyeScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Улучшенное сердечко
+    local heart = {
+        "    ██    ██    ",
+        "   ████  ████   ",
+        "  ███████████  ",
+        "  ███████████  ",
+        "   █████████   ",
+        "    ███████    ",
+        "     █████     ",
+        "      ███      ",
+        "       █       "
+    }
+    
+    -- Расположение сердечка
+    local heartHeight = #heart
+    local startY = math.floor(h/2) - heartHeight - 3
+    
+    -- Рисуем сердечко
+    for i, line in ipairs(heart) do
+        local x = math.floor((w - unicode.len(line)) / 2)
+        gpu.setForeground(0xFF69B4) -- Ярко-розовый
+        gpu.set(x, startY + i, line)
+    end
+    
+    -- Сообщение
+    gpu.setForeground(0xFFFFFF)
+    center(startY + heartHeight + 2, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
+    
+    -- Таймер
+    local remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
+    center(startY + heartHeight + 4, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
+end
+
+-- Отрисовка интерфейса
+local function drawMainScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "МАГАЗИН FAFASTORE", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    -- Отображение логотипа
+    drawLogo()
+    
+    -- Кнопки
+    local centerX = math.floor(w/2)
+    drawButton(centerX - 35, 16, 30, 3, "1. Купить предметы", 0xF5DEB3, 0x000000)
+    drawButton(centerX + 5, 16, 30, 3, "2. Продать предметы", 0xF5DEB3, 0x000000)
+    
+    -- Авторы магазина
+    center(20, "Авторы магазина: fafagod1k и другие", 0xAAAAAA)
+    
+    -- Кнопка администрирования
+    drawButton(w - 15, h, 15, 1, "3. Админ", 0xFF4500, 0xFFFFFF)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h, "Стоя на PIM, используйте сенсорный экран или клавиши 1-3")
+end
+
+-- Глобальные переменные для поиска
+local searchText = ""
+local isSearching = false
+local blinkState = true
+local lastBlinkTime = 0
+local blinkInterval = 0.5 -- интервал мигания в секундах
+
+-- Переменные для экрана выбора количества
+local selectedItem = nil
+local quantityInput = "1"
+local maxQuantity = 0
+
+-- Функция для отображения каталога товаров
+local function drawCatalog(y, items)
+    -- Заголовки таблицы
+    gpu.setForeground(0x00FF00)
+    gpu.set(3, y, "Наименование")
+    gpu.set(40, y, "Наличие")
+    gpu.set(60, y, "Цена за шт.")
+    y = y + 1
+    
+    -- Разделитель
+    gpu.setForeground(0x444444)
+    gpu.fill(3, y, w - 3, 1, "─")
+    y = y + 1
+    
+    -- Список товаров
+    for i, item in ipairs(items) do
+        local name = item.label or "Неизвестный предмет"
+        local amount = formatNumberWithSpaces(item.amount)
+        local price = string.format("%.3f", item.buyPrice):gsub("%.", ",")
+        
+        -- Обрезаем длинные названия
+        if unicode.len(name) > 35 then
+            name = unicode.sub(name, 1, 32) .. "..."
+        end
+        
+        -- Заливка строки серым фоном
+        gpu.setBackground(grayBG)
+        gpu.fill(1, y, w, 1, " ")
+        
+        gpu.setForeground(0xFFFFFF)
+        gpu.set(3, y, name)
+        gpu.setForeground(0xFFFF00)
+        gpu.set(40, y, amount)
+        gpu.setForeground(0x00FF00)
+        gpu.set(60, y, price)
+        
+        y = y + 1
+    end
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(grayBG)
+    
+    return y
+end
+
+local function drawBuyScreen()
+    -- Устанавливаем серый фон для всего экрана
+    gpu.setBackground(grayBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка (черная)
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ПОКУПКА ПРЕДМЕТОВ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    -- Узкая длинная строка поиска с серой рамкой и белым текстом
+    local searchY = 3
+    local searchWidth = w - 8  -- Отступы по 4 символа с каждой стороны
+    local searchHeight = 1
+    
+    -- Рисуем серую рамку
+    gpu.setBackground(lightGrayBG) -- Темно-серый фон
+    gpu.fill(4, searchY, searchWidth, searchHeight, " ")
+    
+    -- Рамка вокруг
+    gpu.setForeground(0x888888) -- Светло-серый цвет рамки
+    gpu.fill(3, searchY-1, searchWidth+2, 1, "─")
+    gpu.fill(3, searchY+searchHeight, searchWidth+2, 1, "─")
+    gpu.fill(3, searchY, 1, searchHeight, "│")
+    gpu.fill(3+searchWidth+1, searchY, 1, searchHeight, "│")
+    
+    -- Угловые символы
+    gpu.set(3, searchY-1, "┌")
+    gpu.set(3+searchWidth+1, searchY-1, "┐")
+    gpu.set(3, searchY+searchHeight, "└")
+    gpu.set(3+searchWidth+1, searchY+searchHeight, "┘")
+    
+    -- Текст внутри рамки с мигающим курсором
+    local displayText = "Поиск: " .. searchText
+    if isSearching and blinkState then
+        displayText = displayText .. "_"
+    end
+    gpu.setForeground(0xFFFFFF) -- Белый текст
+    gpu.set(5, searchY, displayText)
+    
+    -- Список товаров
+    shopItems = {}
+    for key, item in pairs(availableItems) do
+        if item.amount > 0 then
+            -- Фильтрация по поиску по всей строке
+            if searchText == "" or 
+               (item.label and item.label:lower():find(searchText:lower(), 1, true)) or
+               (key and key:lower():find(searchText:lower(), 1, true)) then
+                table.insert(shopItems, {key = key, item = item})
+            end
+        end
+    end
+    
+    -- Сортировка по названию
+    table.sort(shopItems, function(a, b) 
+        return (a.item.label or "ZZZ") < (b.item.label or "ZZZ")
+    end)
+    
+    local startY = searchY + 3  -- Начинаем ниже строки поиска
+    local startIdx = (page - 1) * itemsPerPage + 1
+    
+    -- Сообщение если ничего не найдено
+    if #shopItems == 0 then
+        gpu.setBackground(grayBG)
+        gpu.setForeground(0xFFFF00)
+        center(math.floor(h/2), "Товары не найдены", 0xFFFF00)
+        if searchText ~= "" then
+            center(math.floor(h/2)+1, "Попробуйте изменить запрос", 0xAAAAAA)
+        end
+    else
+        -- Отображение каталога
+        local itemsToShow = {}
+        for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
+            table.insert(itemsToShow, shopItems[i].item)
+        end
+        startY = drawCatalog(startY, itemsToShow)
+    end
+    
+    -- Навигация
+    gpu.setBackground(grayBG)
+    if page > 1 then
+        drawButton(5, h - 2, 10, 1, "< Назад", 0xF5DEB3, 0x000000)
+    end
+    
+    if #shopItems > page * itemsPerPage then
+        drawButton(w - 15, h - 2, 10, 1, "Вперед >", 0xF5DEB3, 0x000000)
+    end
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    
+    -- Подсказка по поиску
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(1, h, "Нажмите F для поиска, Enter для подтверждения")
+    
+    -- Восстанавливаем фон
+    gpu.setBackground(defBG)
+end
+
+-- Отрисовка экрана выбора количества
+local function drawBuyItemScreen()
+    if not selectedItem then
+        state = "BUY"
+        drawBuyScreen()
+        return
+    end
+    
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ВЫБОР КОЛИЧЕСТВА", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    end
+    
+    gpu.setBackground(defBG)
+    
+    -- Информация о выбранном предмете
+    gpu.setForeground(0xFFFF00)
+    center(3, "Вы выбрали: " .. (selectedItem.label or "Неизвестный предмет"), 0xFFFF00)
+    
+    -- Детали предмета
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 5, "В наличии: " .. formatNumberWithSpaces(selectedItem.amount))
+    gpu.set(40, 5, "Цена за шт.: " .. string.format("%.3f", selectedItem.buyPrice):gsub("%.", ","))
+    gpu.set(5, 6, "Баланс: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Ввод количества
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(5, 8, "Введите количество:")
+    
+    -- Поле ввода количества
+    gpu.setBackground(lightGrayBG)
+    gpu.fill(5, 9, 20, 1, " ")
+    gpu.set(6, 9, quantityInput)
+    
+    -- Клавиатура калькулятора
+    local keys = {
+        {"7", "8", "9"},
+        {"4", "5", "6"},
+        {"1", "2", "3"},
+        {"0", "С", "←"}
+    }
+    
+    local startX = 5
+    local startY = 11
+    local btnWidth = 5
+    local btnHeight = 2
+    local spacing = 1
+    
+    -- Рисуем клавиатуру
+    for row = 1, 4 do
+        for col = 1, 3 do
+            local key = keys[row][col]
+            if key then
+                drawButton(
+                    startX + (col-1)*(btnWidth + spacing), 
+                    startY + (row-1)*(btnHeight + spacing), 
+                    btnWidth, 
+                    btnHeight, 
+                    key, 
+                    buttonBG
+                )
+            end
+        end
+    end
+    
+    -- Итоговая информация
+    local quantity = tonumber(quantityInput) or 0
+    local totalPrice = quantity * selectedItem.buyPrice
+    
+    gpu.setForeground(0x00FF00)
+    gpu.set(40, 8, "Количество: " .. quantity)
+    gpu.set(40, 9, "Общая стоимость: " .. string.format("%.3f", totalPrice):gsub("%.", ",") .. " " .. CURRENCY_NAME)
+    gpu.set(40, 10, "Остаток на балансе: " .. formatNumber(playerBalance - totalPrice) .. " " .. CURRENCY_NAME)
+    
+    -- Кнопки действий
+    drawButton(5, 20, 15, 3, "Купить", 0x00AA00, 0xFFFFFF)
+    drawButton(25, 20, 15, 3, "Отмена", 0xAA0000, 0xFFFFFF)
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+local function drawSellScreen()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "ПРОДАЖА ПРЕДМЕТОВ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    gpu.setBackground(defBG)
+    
+    gpu.setForeground(0xFFFF00)
+    center(3, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+    
+    -- Инструкция
+    gpu.setForeground(0xAAAAAA)
+    center(5, "Положите предметы для продажи в инвентарь", 0xAAAAAA)
+    center(6, "и нажмите 'Продать все'", 0xAAAAAA)
+    
+    -- Кнопки
+    drawButton(30, 8, 20, 3, "Продать все", 0xF5DEB3, 0x000000)
+    
+    -- Список покупаемых предметов в виде каталога
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 12, "Магазин покупает:")
+    
+    local itemsToShow = {}
+    for key, item in pairs(availableItems) do
+        table.insert(itemsToShow, {
+            label = item.label,
+            amount = item.amount,
+            price = item.sellPrice
+        })
+    end
+    
+    -- Сортировка по названию
+    table.sort(itemsToShow, function(a, b) 
+        return (a.label or "ZZZ") < (b.label or "ZZZ")
+    end)
+    
+    -- Отображение каталога
+    drawCatalog(14, itemsToShow)
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+local function drawAdminPanel()
+    gpu.setBackground(defBG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    -- Шапка
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, w, 1, " ")
+    center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
+    
+    -- Информация о игроке
+    if currentPlayer then
+        gpu.setForeground(0x00FF00)
+        gpu.set(2, 1, "Игрок: " .. currentPlayer)
+        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+    else
+        gpu.setForeground(0xFF0000)
+        gpu.set(2, 1, "Игрок не обнаружен")
+    end
+    
+    gpu.setBackground(defBG)
+    
+    gpu.setForeground(0xFF00FF)
+    center(3, "АДМИНИСТРАТОР: " .. currentPlayer, 0xFF00FF)
+    
+    -- Кнопки
+    drawButton(5, 5, 20, 3, "Обновить базу", 0xF5DEB3, 0x000000)
+    
+    -- Статистика
+    gpu.setForeground(0x00FF00)
+    gpu.set(5, 9, "Статистика магазина:")
+    
+    local itemCount = 0
+    for _ in pairs(availableItems) do itemCount = itemCount + 1 end
+    
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(5, 11, "Доступно предметов: " .. itemCount)
+    gpu.set(5, 12, "Последнее обновление: " .. os.date("%H:%M:%S", lastScanTime))
+    
+    -- Кнопка возврата
+    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+-- Логика магазина
+local function buyItem(itemKey, quantity)
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local item = availableItems[itemKey]
+    if not item then
+        center(h - 1, "Предмет не найден!", 0xFF0000)
+        return false
+    end
+    
+    quantity = tonumber(quantity) or 1
+    if quantity <= 0 then
+        center(h - 1, "Некорректное количество!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    if quantity > item.amount then
+        center(h - 1, "Недостаточно товара!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    local totalPrice = quantity * item.buyPrice
+    if playerBalance < totalPrice then
+        center(h - 1, "Недостаточно средств!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    -- Выдача предмета
+    local success = me.exportItem({name = itemKey:match("^([^:]+)"), damage = tonumber(itemKey:match(":(%d+)$")) or 0}, "UP", quantity)
+    if success and success.size > 0 then
+        playerBalance = playerBalance - totalPrice
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        
+        -- Обновляем количество
+        item.amount = item.amount - quantity
+        
+        center(h - 1, "Покупка успешна: " .. quantity .. "x " .. (item.label or "предмет"), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(h - 1, "Ошибка выдачи предмета!", 0xFF0000)
+    computer.beep(1000, 0.5)
+    return false
+end
+
+local function sellItems()
+    if not currentPlayer then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    if pim.getInventoryName() ~= "pim" then
+        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+        return false
+    end
+    
+    local totalEarned = 0
+    local itemsSold = 0
+    local inventory = pim.getAllStacks(0)
+    
+    for slot, item in pairs(inventory) do
+        if item then
+            local info = getItemInfo(item)
+            local shopItem = availableItems[info.key]
+            
+            if shopItem then
+                local amountToSell = item.qty
+                local earned = amountToSell * shopItem.sellPrice
+                
+                -- Изъятие предметов у игрока
+                pim.pushItem("DOWN", slot, amountToSell)
+                
+                -- Начисление средств
+                playerBalance = playerBalance + earned
+                totalEarned = totalEarned + earned
+                itemsSold = itemsSold + amountToSell
+                
+                -- Обновляем количество в магазине
+                shopItem.amount = shopItem.amount + amountToSell
+            end
+        end
+    end
+    
+    if itemsSold > 0 then
+        balances[currentPlayer] = playerBalance
+        saveBalances(balances)
+        center(h - 1, string.format("Продано %d предметов на сумму %d %s", 
+               itemsSold, totalEarned, CURRENCY_NAME), 0x00FF00)
+        computer.beep(2000, 0.2)
+        return true
+    end
+    
+    center(h - 1, "Нет предметов для продажи!", 0xFFFF00)
+    return false
+end
+
+-- Обработка событий
+local function handleEvent(eventName, ...)
+    local args = {...}
+    
+    if eventName == "interrupted" then
+        gpu.setBackground(defBG)
+        gpu.setForeground(defFG)
+        gpu.fill(1, 1, w, h, " ")
+        os.exit()
+        return true
+    end
+    
+    -- Вход/выход игрока
+    if eventName == "player_on" then
+        currentPlayer = args[1]
+        playerBalance = balances[currentPlayer] or 0
+        state = "MAIN"
+        drawMainScreen()
+    elseif eventName == "player_off" then
+        state = "GOODBYE"
+        goodbyeTimer = computer.uptime()
+        drawGoodbyeScreen()
+    end
+    
+    -- Обработка касаний
+    if eventName == "touch" and currentPlayer then
+        local _, x, y, button = ...
+        
+        -- Главный экран
+        if state == "MAIN" then
+            local centerX = math.floor(w/2)
+            -- Кнопка покупки
+            if y >= 16 and y <= 18 then
+                if x >= centerX - 35 and x <= centerX - 5 then
+                    state = "BUY"
+                    page = 1
+                    searchText = ""
+                    isSearching = false
+                    blinkState = true
+                    drawBuyScreen()
+                -- Кнопка продажи
+                elseif x >= centerX + 5 and x <= centerX + 35 then
+                    state = "SELL"
+                    drawSellScreen()
+                end
+            end
+            
+            -- Кнопка администрирования
+            if y == h and x >= w - 15 and x <= w then
+                state = "ADMIN"
+                drawAdminPanel()
+            end
+        end
+        
+        -- Экран покупки
+        if state == "BUY" then
+            -- Активация поиска при клике на строку поиска
+            if y == 3 and x >= 4 and x <= w - 4 then
+                isSearching = true
+                blinkState = true
+                lastBlinkTime = computer.uptime()
+                drawBuyScreen()
+            end
+            
+            -- Обработка кликов по товарам
+            local startY = 6  -- Начало списка товаров (после строки поиска и заголовков)
+            local startIdx = (page - 1) * itemsPerPage + 1
+            local endIdx = math.min(startIdx + itemsPerPage - 1, #shopItems)
+            
+            for idx = startIdx, endIdx do
+                local shopItem = shopItems[idx]
+                local itemIndex = idx - startIdx + 1  -- индекс на странице, начиная с 1
+                local itemY = startY + itemIndex + 1  -- координата Y строки товара (с учетом заголовков)
+                
+                if y == itemY and x >= 3 and x <= w-2 then
+                    computer.beep(1500, 0.1)
+                    selectedItem = shopItem.item
+                    quantityInput = "1"
+                    state = "BUY_ITEM"
+                    drawBuyItemScreen()
+                    return
+                end
+            end
+            
+            -- Навигация
+            if y >= h - 2 and y <= h then
+                if x >= 5 and x <= 15 and page > 1 then
+                    page = page - 1
+                    drawBuyScreen()
+                elseif x >= w - 15 and x <= w - 5 and #shopItems > page * itemsPerPage then
+                    page = page + 1
+                    drawBuyScreen()
+                end
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                searchText = ""
+                isSearching = false
+                drawMainScreen()
+            end
+        end
+        
+        -- Экран выбора количества
+        if state == "BUY_ITEM" then
+            -- Обработка клавиатуры калькулятора
+            local keys = {
+                {x1=5, y1=11, x2=9, y2=12, value="7"},
+                {x1=11, y1=11, x2=15, y2=12, value="8"},
+                {x1=17, y1=11, x2=21, y2=12, value="9"},
+                {x1=5, y1=14, x2=9, y2=15, value="4"},
+                {x1=11, y1=14, x2=15, y2=15, value="5"},
+                {x1=17, y1=14, x2=21, y2=15, value="6"},
+                {x1=5, y1=17, x2=9, y2=18, value="1"},
+                {x1=11, y1=17, x2=15, y2=18, value="2"},
+                {x1=17, y1=17, x2=21, y2=18, value="3"},
+                {x1=5, y1=20, x2=9, y2=21, value="0"},
+                {x1=11, y1=20, x2=15, y2=21, value="С"},
+                {x1=17, y1=20, x2=21, y2=21, value="←"}
+            }
+            
+            for _, key in ipairs(keys) do
+                if y >= key.y1 and y <= key.y2 and x >= key.x1 and x <= key.x2 then
+                    if key.value == "С" then
+                        quantityInput = "0"
+                    elseif key.value == "←" then
+                        if #quantityInput > 0 then
+                            quantityInput = quantityInput:sub(1, -2)
+                        end
+                        if quantityInput == "" then
+                            quantityInput = "0"
+                        end
+                    else
+                        -- Убраны ограничения на ввод чисел
+                        if quantityInput == "0" then
+                            quantityInput = key.value
+                        else
+                            quantityInput = quantityInput .. key.value
+                        end
+                    end
+                    drawBuyItemScreen()
+                    return
+                end
+            end
+            
+            -- Кнопка покупки
+            if y >= 20 and y <= 22 and x >= 5 and x <= 19 then
+                local quantity = tonumber(quantityInput) or 0
+                if quantity > 0 then
+                    if buyItem(selectedItem.key, quantity) then
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            end
+            
+            -- Кнопка отмены
+            if y >= 20 and y <= 22 and x >= 25 and x <= 39 then
+                state = "BUY"
+                drawBuyScreen()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Экран продажи
+        if state == "SELL" then
+            if y >= 8 and y <= 10 and x >= 30 and x <= 50 then
+                sellItems()
+                os.sleep(1)
+                drawSellScreen()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Админ-панель
+        if state == "ADMIN" then
+            if y >= 5 and y <= 7 and x >= 5 and x <= 25 then
+                -- Обновление ME системы
+                center(h - 1, "Обновление информации...", 0xFFFF00)
+                availableItems = getAvailableItems()
+                lastScanTime = os.time()
+                center(h - 1, "Информация обновлена!", 0x00FF00)
+                drawAdminPanel()
+            end
+            
+            -- Кнопка возврата
+            if y == h and x >= w - 10 and x <= w then
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+    end
+    
+    -- Обработка клавиатуры
+    if eventName == "key_down" and currentPlayer then
+        local _, char, code = ...
+        
+        -- Быстрые клавиши в главном меню
+        if state == "MAIN" then
+            if char == 49 or code == 2 then -- 1
+                state = "BUY"
+                page = 1
+                searchText = ""
+                isSearching = false
+                blinkState = true
+                drawBuyScreen()
+            elseif char == 50 or code == 3 then -- 2
+                state = "SELL"
+                drawSellScreen()
+            elseif char == 51 or code == 4 then -- 3
+                state = "ADMIN"
+                drawAdminPanel()
+            end
+        end
+        
+        -- Навигация в меню покупки
+        if state == "BUY" then
+            if char == 27 then -- ESC
+                state = "MAIN"
+                searchText = ""
+                isSearching = false
+                drawMainScreen()
+            elseif char == 97 or code == 30 then -- A/Left
+                if page > 1 then
+                    page = page - 1
+                    drawBuyScreen()
+                end
+            elseif char == 100 or code == 32 then -- D/Right
+                if #shopItems > page * itemsPerPage then
+                    page = page + 1
+                    drawBuyScreen()
+                end
+            end
+            
+            -- Активация/деактивация поиска
+            if char == 102 or code == 33 then -- F key
+                isSearching = not isSearching
+                blinkState = true
+                lastBlinkTime = computer.uptime()
+                drawBuyScreen()
+            end
+            
+            -- Ввод текста поиска
+            if isSearching then
+                if char then
+                    -- Буквы и цифры
+                    if (char >= 65 and char <= 90) or   -- A-Z
+                       (char >= 97 and char <= 122) or  -- a-z
+                       (char >= 48 and char <= 57) or   -- 0-9
+                       char == 32 then                  -- Space
+                        searchText = searchText .. string.char(char)
+                        page = 1
+                        blinkState = true
+                        lastBlinkTime = computer.uptime()
+                        drawBuyScreen()
+                    -- Backspace
+                    elseif char == 8 then
+                        searchText = searchText:sub(1, -2)
+                        page = 1
+                        blinkState = true
+                        lastBlinkTime = computer.uptime()
+                        drawBuyScreen()
+                    -- Enter - завершение поиска
+                    elseif char == 13 then
+                        isSearching = false
+                        drawBuyScreen()
+                    -- Escape - очистка и выход
+                    elseif char == 27 then
+                        searchText = ""
+                        isSearching = false
+                        page = 1
+                        drawBuyScreen()
+                    end
+                end
+            end
+        end
+        
+        -- Ввод количества на экране покупки
+        if state == "BUY_ITEM" then
+            if char >= 48 and char <= 57 then -- Цифры 0-9
+                if quantityInput == "0" then
+                    quantityInput = string.char(char)
+                else
+                    quantityInput = quantityInput .. string.char(char)
+                end
+                drawBuyItemScreen()
+            elseif char == 8 then -- Backspace
+                if #quantityInput > 0 then
+                    quantityInput = quantityInput:sub(1, -2)
+                end
+                if quantityInput == "" then
+                    quantityInput = "0"
+                end
+                drawBuyItemScreen()
+            elseif char == 13 then -- Enter
+                local quantity = tonumber(quantityInput) or 0
+                if quantity > 0 then
+                    if buyItem(selectedItem.key, quantity) then
+                        state = "BUY"
+                        drawBuyScreen()
+                    end
+                end
+            elseif char == 27 then -- ESC
+                state = "BUY"
+                drawBuyScreen()
+            end
+        end
+        
+        -- Возврат в главное меню
+        if char == 113 or code == 16 then -- Q
+            state = "MAIN"
+            searchText = ""
+            isSearching = false
+            drawMainScreen()
+        end
+    end
+end
+
+-- Основной цикл
+local function main()
+    -- Инициализация
+    gpu.setBackground(defBG)
+    gpu.setForeground(defFG)
+    gpu.fill(1, 1, w, h, " ")
+    
+    center(math.floor(h/2), "Инициализация магазина FAFASTORE...", 0xFFFF00)
+    center(math.floor(h/2)+1, "Загрузка данных...", 0xFFFF00)
+    
+    -- Загрузка данных
+    balances = loadBalances()
+    availableItems = getAvailableItems()
+    lastScanTime = os.time()
+    
+    -- Основные переменные
+    currentPlayer = nil
+    playerBalance = 0
+    shopItems = {}
+    state = "MAIN"
+    page = 1
+    itemsPerPage = 12
+    goodbyeTimer = 0
+    searchText = ""
+    isSearching = false
+    blinkState = true
+    lastBlinkTime = computer.uptime()
+    local blinkInterval = 0.5
+    
+    drawMainScreen()
+    
+    while true do
+        local e = {event.pull(0.1)}  -- Уменьшили таймаут для плавного мигания
+        
+        -- Обновление мигания курсора
+        local currentTime = computer.uptime()
+        if state == "BUY" and isSearching and (currentTime - lastBlinkTime) >= blinkInterval then
+            blinkState = not blinkState
+            lastBlinkTime = currentTime
+            drawBuyScreen()
+        end
+        
+        -- Проверка присутствия игрока
+        if currentPlayer and state ~= "GOODBYE" then
+            local invName = pim.getInventoryName()
+            if invName ~= currentPlayer then
+                state = "GOODBYE"
+                goodbyeTimer = computer.uptime()
+                drawGoodbyeScreen()
+            end
+        end
+        
+        -- Обработка таймера для экрана прощания
+        if state == "GOODBYE" then
+            local currentTime = computer.uptime()
+            local elapsed = currentTime - goodbyeTimer
+            
+            drawGoodbyeScreen()
+            
+            if elapsed >= 5 then
+                currentPlayer = nil
+                playerBalance = 0
+                state = "MAIN"
+                drawMainScreen()
+            end
+        end
+        
+        -- Обработка других событий
+        if e[1] then
+            handleEvent(table.unpack(e))
+        end
+    end
+end
+
+-- Запуск программы
+main()
