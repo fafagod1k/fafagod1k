@@ -607,7 +607,7 @@ local function getItemInfo(item)
     local key = item.name
     local dmg = item.damage or item.dmg or 0
     if dmg > 0 then
-        key = key .. ":" .. dmg
+        key = key .. "@" .. dmg
     else
         key = key .. "@0"  -- Используем @0 для предметов без урона
     end
@@ -636,7 +636,8 @@ local function getAvailableItems()
                     label = catalogItem.label,
                     buyPrice = catalogItem.buyPrice,
                     sellPrice = catalogItem.sellPrice,
-                    amount = item.size
+                    amount = item.size,
+                    key = info.key
                 }
             end
         end
@@ -783,7 +784,7 @@ local function drawGoodbyeScreen()
     center(startY + heartHeight + 2, "Спасибо за покупку, приходите еще!", 0xFFFFFF)
     
     -- Таймер
-    local remaining = math.ceil(5 - (computer.uptime() - goodbyeTimer))
+    local remaining = math.max(0, math.ceil(5 - (computer.uptime() - goodbyeTimer))
     center(startY + heartHeight + 4, "Возвращение в главное меню через: " .. remaining .. " сек.", 0xAAAAAA)
 end
 
@@ -963,7 +964,11 @@ local function drawBuyScreen()
         -- Отображение каталога
         local itemsToShow = {}
         for i = startIdx, math.min(startIdx + itemsPerPage - 1, #shopItems) do
-            table.insert(itemsToShow, shopItems[i].item)
+            table.insert(itemsToShow, {
+                label = shopItems[i].item.label,
+                amount = shopItems[i].item.amount,
+                price = shopItems[i].item.buyPrice
+            })
         end
         startY = drawCatalog(startY, itemsToShow)
     end
@@ -979,7 +984,7 @@ local function drawBuyScreen()
     end
     
     -- Кнопка возврата
-    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    drawButton(w - 10, h - 1, 10, 1, "Назад", 0xFF4500)
     
     -- Подсказка по поиску
     gpu.setForeground(0xAAAAAA)
@@ -1078,7 +1083,7 @@ local function drawBuyItemScreen()
     drawButton(25, 20, 15, 3, "Отмена", 0xAA0000, 0xFFFFFF)
     
     -- Кнопка возврата
-    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    drawButton(w - 10, h - 1, 10, 1, "Назад", 0xFF4500)
 end
 
 local function drawSellScreen()
@@ -1119,7 +1124,7 @@ local function drawSellScreen()
     
     local itemsToShow = {}
     for key, item in pairs(availableItems) do
-        -- ИСПРАВЛЕНИЕ: Проверка наличия sellPrice
+        -- Проверка наличия sellPrice
         local sellPrice = item.sellPrice or DEFAULT_SELL_PRICE
         table.insert(itemsToShow, {
             label = item.label,
@@ -1137,7 +1142,7 @@ local function drawSellScreen()
     drawCatalog(14, itemsToShow)
     
     -- Кнопка возврата
-    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    drawButton(w - 10, h - 1, 10, 1, "Назад", 0xFF4500)
 end
 
 -- Логика магазина
@@ -1168,13 +1173,17 @@ local function buyItem(itemKey, quantity)
     
     local totalPrice = quantity * item.buyPrice
     if playerBalance < totalPrice then
-        center(h - 1, "Недостаточно средств!", 0xFF0000)
+        center(h - 极1, "Недостаточно средств!", 0xFF0000)
         computer.beep(1000, 0.5)
         return false
     end
     
     -- Выдача предмета
-    local success = me.exportItem({name = itemKey:match("^([^:]+)"), damage = tonumber(itemKey:match(":(%d+)$")) or 0}, "UP", quantity)
+    local namePart = itemKey:match("^([^@]+)")
+    local damagePart = itemKey:match("@(%d+)$")
+    local damage = tonumber(damagePart) or 0
+    
+    local success = me.exportItem({name = namePart, damage = damage}, "UP", quantity)
     if success and success.size > 0 then
         playerBalance = playerBalance - totalPrice
         balances[currentPlayer] = playerBalance
@@ -1193,7 +1202,7 @@ local function buyItem(itemKey, quantity)
     return false
 end
 
--- ИСПРАВЛЕННАЯ ФУНКЦИЯ ПРОДАЖИ
+-- Функция продажи
 local function sellItems()
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
@@ -1215,7 +1224,7 @@ local function sellItems()
             local shopItem = availableItems[info.key]
             
             if shopItem then
-                -- ИСПРАВЛЕНИЕ: используем item.size вместо item.qty
+                -- Используем item.size для количества
                 local amountToSell = item.size
                 local earned = amountToSell * shopItem.sellPrice
                 
@@ -1339,7 +1348,7 @@ local function handleEvent(eventName, ...)
             end
             
             -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
+            if y == h - 1 and x >= w - 10 and x <= w then
                 state = "MAIN"
                 searchText = ""
                 isSearching = false
@@ -1407,7 +1416,7 @@ local function handleEvent(eventName, ...)
             end
             
             -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
+            if y == h - 1 and x >= w - 10 and x <= w then
                 state = "MAIN"
                 drawMainScreen()
             end
@@ -1422,7 +1431,7 @@ local function handleEvent(eventName, ...)
             end
             
             -- Кнопка возврата
-            if y == h and x >= w - 10 and x <= w then
+            if y == h - 1 and x >= w - 10 and x <= w then
                 state = "MAIN"
                 drawMainScreen()
             end
@@ -1566,9 +1575,14 @@ local function main()
     availableItems = getAvailableItems()
     lastScanTime = os.time()
     
+    -- Проверка игрока при старте
+    local invName = pim.getInventoryName()
+    if invName ~= "pim" then
+        currentPlayer = invName
+        playerBalance = balances[currentPlayer] or 0
+    end
+    
     -- Основные переменные
-    currentPlayer = nil
-    playerBalance = 0
     shopItems = {}
     state = "MAIN"
     page = 1
@@ -1593,7 +1607,7 @@ local function main()
         end
         
         -- Проверка присутствия игрока
-        if currentPlayer and state ~极 "GOODBYE" then
+        if currentPlayer and state ~= "GOODBYE" then
             local invName = pim.getInventoryName()
             if invName ~= currentPlayer then
                 state = "GOODBYE"
@@ -1605,7 +1619,7 @@ local function main()
         -- Обработка таймера для экрана прощания
         if state == "GOODBYE" then
             local currentTime = computer.uptime()
-            local elapsed = current极 - goodbyeTimer
+            local elapsed = currentTime - goodbyeTimer
             
             drawGoodbyeScreen()
             
