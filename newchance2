@@ -776,15 +776,14 @@ local function buyItem(itemKey, quantity)
     return false
 end
 
--- Функция для пополнения баланса
+-- Функция для пополнения баланса (ИСПРАВЛЕННАЯ)
 local function depositItems()
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
         return false
     end
     
-    -- Проверяем, что игрок действительно стоит на PIM
-    -- Вместо проверки имени инвентаря, проверяем, что мы можем получить доступ к инвентарю
+    -- Получаем все стеки из инвентаря игрока
     local success, inventory = pcall(pim.getAllStacks, 0)
     if not success then
         center(h - 1, "Ошибка доступа к инвентарю!", 0xFF0000)
@@ -794,27 +793,28 @@ local function depositItems()
     local totalEarned = 0
     local itemsProcessed = 0
     
-    for slot, item in pairs(inventory) do
-        if item then
+    -- Перебираем все слоты инвентаря
+    for slot = 1, 27 do  -- 27 слотов в инвентаре игрока
+        local item = inventory[slot]
+        if item and item.name then
             local info = getItemInfo(item)
             local itemPrice = DEPOSIT_PRICES[info.name]
             
             if itemPrice then
-                local amountToProcess = item.qty
+                local amountToProcess = item.qty or item.size
                 local earned = amountToProcess * itemPrice
                 
                 -- Изъятие предметов у игрока
                 local pushSuccess = pim.pushItem("DOWN", slot, amountToProcess)
-                if not pushSuccess then
-                    center(h - 1, "Ошибка изъятия предметов!", 0xFF0000)
+                if pushSuccess then
+                    -- Начисление средств
+                    playerBalance = playerBalance + earned
+                    totalEarned = totalEarned + earned
+                    itemsProcessed = itemsProcessed + amountToProcess
+                else
+                    center(h - 1, "Ошибка изъятия предметов из слота " .. slot, 0xFF0000)
                     computer.beep(1000, 0.5)
-                    return false
                 end
-                
-                -- Начисление средств
-                playerBalance = playerBalance + earned
-                totalEarned = totalEarned + earned
-                itemsProcessed = itemsProcessed + amountToProcess
             end
         end
     end
