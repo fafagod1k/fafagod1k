@@ -224,7 +224,7 @@ local function drawButton(x, y, width, height, text, bgColor, fgColor)
     return x, y, x + width - 1, y + height - 1
 end
 
--- Функция для отображения логотипа
+-- Функция для отображение логотипа
 local function drawLogo()
     -- Отображение надписи FAFASTORE
     local topLines = {}
@@ -409,7 +409,7 @@ local function drawBuyScreen()
         gpu.set(2, 1, "Игрок не обнаружен")
     end
     
-    -- Узкая длинная строка поиска с серой рамкой и белым текстом
+    -- Узкая длинная строка поиска с серой рамкой и белым текстам
     local searchY = 3
     local searchWidth = w - 8  -- Отступы по 4 символа с каждой стороны
     local searchHeight = 1
@@ -783,14 +783,16 @@ local function depositItems()
         return false
     end
     
-    if pim.getInventoryName() ~= "pim" then
-        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+    -- Проверяем, что игрок действительно стоит на PIM
+    -- Вместо проверки имени инвентаря, проверяем, что мы можем получить доступ к инвентарю
+    local success, inventory = pcall(pim.getAllStacks, 0)
+    if not success then
+        center(h - 1, "Ошибка доступа к инвентарю!", 0xFF0000)
         return false
     end
     
     local totalEarned = 0
     local itemsProcessed = 0
-    local inventory = pim.getAllStacks(0)
     
     for slot, item in pairs(inventory) do
         if item then
@@ -802,7 +804,12 @@ local function depositItems()
                 local earned = amountToProcess * itemPrice
                 
                 -- Изъятие предметов у игрока
-                pim.pushItem("DOWN", slot, amountToProcess)
+                local pushSuccess = pim.pushItem("DOWN", slot, amountToProcess)
+                if not pushSuccess then
+                    center(h - 1, "Ошибка изъятия предметов!", 0xFF0000)
+                    computer.beep(1000, 0.5)
+                    return false
+                end
                 
                 -- Начисление средств
                 playerBalance = playerBalance + earned
