@@ -784,6 +784,7 @@ local function depositItems()
     end
     
     -- Получаем инвентарь игрока через PIM
+    -- Используем прямой вызов метода getInventory() из компонента pim
     local inv = pim.getInventory()
     if not inv then
         center(h - 1, "Инвентарь игрока недоступен!", 0xFF0000)
@@ -1205,6 +1206,7 @@ local function main()
         
         -- Проверка присутствия игрока
         if currentPlayer and state ~= "GOODBYE" then
+            -- Используем прямой вызов getInventory() из pim
             local inv = pim.getInventory()
             if not inv then
                 state = "GOODBYE"
