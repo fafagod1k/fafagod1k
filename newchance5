@@ -590,36 +590,6 @@ local function drawBuyItemScreen()
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
--- Функция для проверки наличия предметов для пополнения баланса
-local function checkDepositItems()
-    if not currentPlayer then return {} end
-    
-    local depositItems = {}
-    
-    -- Проверяем каждый слот инвентаря
-    for slot = 1, 27 do  -- Обычно у игрока 27 слотов инвентаря
-        local success, item = pcall(pim.getStackInSlot, 0, slot)
-        if success and item then
-            local info = getItemInfo(item)
-            local itemPrice = DEPOSIT_PRICES[info.name]
-            
-            if itemPrice then
-                if not depositItems[info.name] then
-                    depositItems[info.name] = {
-                        label = info.label,
-                        price = itemPrice,
-                        count = 0
-                    }
-                end
-                depositItems[info.name].count = depositItems[info.name].count + item.size
-            end
-        end
-    end
-    
-    return depositItems
-end
-
--- Отрисовка экрана пополнения баланса с актуальными данными
 local function drawDepositScreen()
     gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
@@ -652,9 +622,6 @@ local function drawDepositScreen()
     -- Кнопки
     drawButton(30, 8, 20, 3, "Пополнить баланс", 0xF5DEB3, 0x000000)
     
-    -- Проверяем наличие предметов для пополнения
-    local depositItems = checkDepositItems()
-    
     -- Список принимаемых предметов и их цены
     gpu.setForeground(0x00FF00)
     gpu.set(5, 12, "Магазин принимает:")
@@ -662,11 +629,9 @@ local function drawDepositScreen()
     local itemsToShow = {}
     for name, price in pairs(DEPOSIT_PRICES) do
         local info = getItemInfo({name = name, damage = 0})
-        local count = depositItems[name] and depositItems[name].count or 0
-        
         table.insert(itemsToShow, {
             label = info.label,
-            amount = count,
+            amount = 0,  -- Не отображаем количество
             price = price
         })
     end
@@ -679,7 +644,6 @@ local function drawDepositScreen()
     -- Заголовки таблицы
     gpu.setForeground(0x00FF00)
     gpu.set(3, 14, "Наименование")
-    gpu.set(40, 14, "Наличие")
     gpu.set(60, 14, "Цена за шт.")
     local y = 15
     
@@ -691,7 +655,6 @@ local function drawDepositScreen()
     -- Список предметов
     for _, item in ipairs(itemsToShow) do
         local name = item.label or "Неизвестный предмет"
-        local amount = formatNumberWithSpaces(item.amount)
         local price = string.format("%.3f", item.price):gsub("%.", ",")
         
         -- Обрезаем длинные названия
@@ -705,8 +668,6 @@ local function drawDepositScreen()
         
         gpu.setForeground(0xFFFFFF)
         gpu.set(3, y, name)
-        gpu.setForeground(0xFFFF00)
-        gpu.set(40, y, amount)
         gpu.setForeground(0x00FF00)
         gpu.set(60, y, price .. " " .. CURRENCY_NAME)
         
@@ -815,25 +776,32 @@ local function buyItem(itemKey, quantity)
     return false
 end
 
--- Функция для пополнения баланса
+-- Функция для пополнения баланса (ИСПРАВЛЕННАЯ)
 local function depositItems()
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
         return false
     end
     
+    -- Получаем все стеки из инвентаря игрока
+    local success, inventory = pcall(pim.getAllStacks, 0)
+    if not success then
+        center(h - 1, "Ошибка доступа к инвентарю!", 0xFF0000)
+        return false
+    end
+    
     local totalEarned = 0
     local itemsProcessed = 0
     
-    -- Проверяем каждый слот инвентаря
-    for slot = 1, 27 do  -- Обычно у игрока 27 слотов инвентаря
-        local success, item = pcall(pim.getStackInSlot, 0, slot)
-        if success and item then
+    -- Перебираем все слоты инвентаря
+    for slot = 1, 27 do  -- 27 слотов в инвентаре игрока
+        local item = inventory[slot]
+        if item and item.name then
             local info = getItemInfo(item)
             local itemPrice = DEPOSIT_PRICES[info.name]
             
             if itemPrice then
-                local amountToProcess = item.size
+                local amountToProcess = item.qty or item.size
                 local earned = amountToProcess * itemPrice
                 
                 -- Изъятие предметов у игрока
@@ -846,7 +814,6 @@ local function depositItems()
                 else
                     center(h - 1, "Ошибка изъятия предметов из слота " .. slot, 0xFF0000)
                     computer.beep(1000, 0.5)
-                    return false
                 end
             end
         end
@@ -1259,11 +1226,6 @@ local function main()
                 state = "MAIN"
                 drawMainScreen()
             end
-        end
-        
-        -- Постоянная проверка наличия предметов для пополнения баланса
-        if currentPlayer and state == "DEPOSIT" then
-            drawDepositScreen()
         end
         
         -- Обработка других событий
