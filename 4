@@ -22,7 +22,6 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
-local TRANSLATE_PATH = "tran.lua"
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 
 -- Цены для пополнения баланса
@@ -56,7 +55,7 @@ local logoBottom = [[
 ██╔████╔██║██║      ███████╗█████╔╝ ██║██║     ██║     
 ██║╚██╔╝██║██║      ╚════██║██╔═██╗ ██║██║     ██║     
 ██║ ╚═╝ ██║╚██████╗ ███████║██║  ██╗██║███████╗███████╗
-╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
+╚═╝     ╚═╝ ╚════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
 ]]
 
 -- Загрузка/сохранение балансов
@@ -76,33 +75,7 @@ local function saveBalances(balances)
     file:close()
 end
 
--- Загрузка переводов предметов (исправленная версия)
-local function loadTranslations()
-    if fs.exists(TRANSLATE_PATH) then
-        local file = io.open(TRANSLATE_PATH, "r")
-        local data = file:read("*a")
-        file:close()
-        
-        -- Загрузка таблицы переводов
-        local chunk, err = load("return " .. data, "translate", "t", {})
-        if chunk then
-            local success, result = pcall(chunk)
-            if success and type(result) == "table" then
-                return result
-            else
-                print("Ошибка выполнения переводов: " .. tostring(result))
-            end
-        else
-            print("Ошибка загрузки переводов: " .. tostring(err))
-        end
-    end
-    return {}
-end
-
--- Глобальная переменная с переводами
-local translations = loadTranslations()
-
--- Получение информации о предмете с использованием переводов (исправленная версия)
+-- Получение информации о предмете (упрощенная версия без переводов)
 local function getItemInfo(item)
     if not item or not item.name then 
         return {label = "Неизвестный предмет", name = "unknown", damage = 0, key = "unknown"}
@@ -112,14 +85,11 @@ local function getItemInfo(item)
     local baseName = item.name:match("^([^@]+)") or item.name
     local dmg = item.damage or item.dmg or 0
     
-    -- Ищем перевод по базовому имени
-    local translation = translations[baseName]
-    
     -- Формируем полный ключ
     local key = baseName .. (dmg > 0 and (":" .. dmg) or "")
     
-    -- Используем перевод, если он есть
-    local label = translation or item.label or baseName
+    -- Используем label из предмета, если он есть, иначе используем имя
+    local label = item.label or baseName
     
     return {
         label = label,
@@ -138,7 +108,7 @@ local function getAvailableItems()
         if item and item.name then
             local info = getItemInfo(item)
             availableItems[info.key] = {
-                label = info.label,  -- Используем переведенный label
+                label = info.label,
                 name = info.name,
                 damage = info.damage,
                 price = DEFAULT_BUY_PRICE,
@@ -709,7 +679,7 @@ local function drawDepositScreen()
     -- Сортировка по названию
     table.sort(depositItemsList, function(a, b) 
         return (a.label or "ZZZ") < (b.label or "ZZZ")
-    end)
+    end
     
     -- Отображаем инвентарь
     local startY = 7
