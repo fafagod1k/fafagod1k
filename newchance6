@@ -783,34 +783,34 @@ local function depositItems()
         return false
     end
     
-    -- Получаем все стеки из инвентаря игрока
-    local success, inventory = pcall(pim.getAllStacks, 0)
-    if not success then
-        center(h - 1, "Ошибка доступа к инвентарю!", 0xFF0000)
+    -- Получаем инвентарь игрока
+    local inv = pim.getInventory()
+    if not inv then
+        center(h - 1, "Инвентарь игрока недоступен!", 0xFF0000)
         return false
     end
     
     local totalEarned = 0
     local itemsProcessed = 0
     
-    -- Перебираем все слоты инвентаря
-    for slot = 1, 27 do  -- 27 слотов в инвентаре игрока
-        local item = inventory[slot]
-        if item and item.name then
-            local info = getItemInfo(item)
+    -- Перебираем все слоты инвентаря игрока
+    for slot = 1, inv.size() do
+        local stack = inv.getStackInSlot(slot)
+        if stack and stack.name then
+            local info = getItemInfo(stack)
             local itemPrice = DEPOSIT_PRICES[info.name]
             
             if itemPrice then
-                local amountToProcess = item.qty or item.size
+                local amountToProcess = stack.size
                 local earned = amountToProcess * itemPrice
                 
-                -- Изъятие предметов у игрока
-                local pushSuccess = pim.pushItem("DOWN", slot, amountToProcess)
-                if pushSuccess then
+                -- Изъятие предметов у игрока (перемещение вниз)
+                local pushed = pim.pushItem("DOWN", slot, amountToProcess)
+                if pushed > 0 then
                     -- Начисление средств
                     playerBalance = playerBalance + earned
                     totalEarned = totalEarned + earned
-                    itemsProcessed = itemsProcessed + amountToProcess
+                    itemsProcessed = itemsProcessed + pushed
                 else
                     center(h - 1, "Ошибка изъятия предметов из слота " .. slot, 0xFF0000)
                     computer.beep(1000, 0.5)
@@ -1157,7 +1157,6 @@ local function handleEvent(eventName, ...)
             searchText = ""
             isSearching = false
             drawMainScreen()
-        end
     end
 end
 
