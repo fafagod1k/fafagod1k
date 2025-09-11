@@ -641,7 +641,7 @@ local function drawDepositScreen()
         return (a.label or "ZZZ") < (b.label or "ZZZ")
     end)
     
-    -- Заголовки таблицы
+    -- Заголовки таблица
     gpu.setForeground(0x00FF00)
     gpu.set(3, 14, "Наименование")
     gpu.set(60, 14, "Цена за шт.")
@@ -1157,6 +1157,7 @@ local function handleEvent(eventName, ...)
             searchText = ""
             isSearching = false
             drawMainScreen()
+        end
     end
 end
 
