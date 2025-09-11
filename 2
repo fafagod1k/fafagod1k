@@ -623,7 +623,7 @@ end
 
 -- Функция для отображения инвентаря игрока
 local function drawPlayerInventory(y, items)
-    -- Заголовки таблицы
+    -- Заголовки таблица
     gpu.setForeground(0x00FF00)
     gpu.set(3, y, "Наименование")
     gpu.set(40, y, "Количество")
@@ -1230,6 +1230,7 @@ local function handleEvent(eventName, ...)
                     page = page + 1
                     drawBuyScreen()
                 end
+            end
             
             -- Активация/деактивация поиска
             if char == 102 or code == 33 then -- F key
