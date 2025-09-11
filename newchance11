@@ -590,6 +590,35 @@ local function drawBuyItemScreen()
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
+-- Функция для проверки инвентаря игрока при заходе
+local function checkPlayerInventory()
+    if not currentPlayer then return end
+    
+    local totalIronBlocks = 0
+    local totalIronIngots = 0
+    
+    -- Проверяем каждый слот инвентаря игрока
+    for slot = 1, 27 do
+        local item = pim.getStackInSlot(0, slot)
+        if item and item.name then
+            if item.name == "minecraft:iron_block" then
+                totalIronBlocks = totalIronBlocks + (item.size or 0)
+            elseif item.name == "minecraft:iron_ingot" then
+                totalIronIngots = totalIronIngots + (item.size or 0)
+            end
+        end
+    end
+    
+    -- Выводим информацию о найденных предметах
+    if totalIronBlocks > 0 or totalIronIngots > 0 then
+        gpu.setBackground(defBG)
+        gpu.setForeground(0x00FF00)
+        gpu.set(1, 2, "Найдено в инвентаре: ")
+        gpu.set(25, 2, "Железных блоков: " .. totalIronBlocks)
+        gpu.set(50, 2, "Железных слитков: " .. totalIronIngots)
+    end
+end
+
 local function drawDepositScreen()
     gpu.setBackground(defBG)
     gpu.fill(1, 1, w, h, " ")
@@ -688,7 +717,7 @@ local function drawAdminPanel()
     -- Шапка
     gpu.setBackground(0x000000)
     gpu.fill(1, 1, w, 1, " ")
-    center(1, "АДМИНИСТРАТИВНАя ПАНЕЛЬ", 0xFFFFFF)
+    center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
@@ -776,42 +805,34 @@ local function buyItem(itemKey, quantity)
     return false
 end
 
--- Функция для пополнения баланса (ИСПРАВЛЕННАЯ)
+-- Улучшенная функция для пополнения баланса
 local function depositItems()
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
         return false
     end
     
-    -- Получаем инвентарь игрока через PIM
-    -- Используем прямой вызов метода getInventory() из компонента pim
-    local inv = pim.getInventory()
-    if not inv then
-        center(h - 1, "Инвентарь игрока недоступен!", 0xFF0000)
-        return false
-    end
-    
     local totalEarned = 0
     local itemsProcessed = 0
     
-    -- Перебираем все слоты инвентаря игрока
-    for slot = 1, inv.size() do
-        local stack = inv.getStackInSlot(slot)
-        if stack and stack.name then
-            local info = getItemInfo(stack)
+    -- Проверяем каждый слот инвентаря игрока
+    for slot = 1, 27 do
+        local item = pim.getStackInSlot(0, slot)
+        if item and item.name then
+            local info = getItemInfo(item)
             local itemPrice = DEPOSIT_PRICES[info.name]
             
             if itemPrice then
-                local amountToProcess = stack.size
+                local amountToProcess = item.size or item.qty or 0
                 local earned = amountToProcess * itemPrice
                 
-                -- Изъятие предметов у игрока (перемещение вниз)
-                local pushed = pim.pushItem("DOWN", slot, amountToProcess)
-                if pushed > 0 then
+                -- Изъятие предметов у игрока
+                local pushSuccess = pim.pushItem(0, slot, amountToProcess)
+                if pushSuccess then
                     -- Начисление средств
                     playerBalance = playerBalance + earned
                     totalEarned = totalEarned + earned
-                    itemsProcessed = itemsProcessed + pushed
+                    itemsProcessed = itemsProcessed + amountToProcess
                 else
                     center(h - 1, "Ошибка изъятия предметов из слота " .. slot, 0xFF0000)
                     computer.beep(1000, 0.5)
@@ -851,6 +872,9 @@ local function handleEvent(eventName, ...)
         playerBalance = balances[currentPlayer] or 0
         state = "MAIN"
         drawMainScreen()
+        
+        -- Проверяем инвентарь игрока при заходе
+        checkPlayerInventory()
     elseif eventName == "player_off" then
         state = "GOODBYE"
         goodbyeTimer = computer.uptime()
@@ -1206,9 +1230,8 @@ local function main()
         
         -- Проверка присутствия игрока
         if currentPlayer and state ~= "GOODBYE" then
-            -- Используем прямой вызов getInventory() из pim
-            local inv = pim.getInventory()
-            if not inv then
+            local invName = pim.getInventoryName()
+            if invName ~= currentPlayer then
                 state = "GOODBYE"
                 goodbyeTimer = computer.uptime()
                 drawGoodbyeScreen()
