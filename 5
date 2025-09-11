@@ -55,7 +55,7 @@ local logoBottom = [[
 ██╔████╔██║██║      ███████╗█████╔╝ ██║██║     ██║     
 ██║╚██╔╝██║██║      ╚════██║██╔═██╗ ██║██║     ██║     
 ██║ ╚═╝ ██║╚██████╗ ███████║██║  ██╗██║███████╗███████╗
-╚═╝     ╚═╝ ╚════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
+╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝
 ]]
 
 -- Загрузка/сохранение балансов
@@ -618,188 +618,188 @@ local function drawPlayerInventory(y, items)
         
         -- Заливка строки серым фоном
         gpu.setBackground(grayBG)
-        gpu.fill(1, y, w, 1, " ")
-        
-        gpu.setForeground(0xFFFFFF)
-        gpu.set(3, y, name)
-        gpu.setForeground(0xFFFF00)
-        gpu.set(40, y, amount)
-        gpu.setForeground(0x00FF00)
-        gpu.set(60, y, price .. " " .. CURRENCY_NAME)
-        
-        y = y + 1
-    end
+    gpu.fill(1, y, w, 1, " ")
     
-    -- Восстанавливаем фон
-    gpu.setBackground(grayBG)
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(3, y, name)
+    gpu.setForeground(0xFFFF00)
+    gpu.set(40, y, amount)
+    gpu.setForeground(0x00FF00)
+    gpu.set(60, y, price .. " " .. CURRENCY_NAME)
     
-    return y
+    y = y + 1
+end
+
+-- Восстанавливаем фон
+gpu.setBackground(grayBG)
+
+return y
 end
 
 -- Отрисовка экрана пополнения баланса
 local function drawDepositScreen()
-    gpu.setBackground(defBG)
-    gpu.fill(1, 1, w, h, " ")
-    
-    -- Шапка
-    gpu.setBackground(0x000000)
-    gpu.fill(1, 1, w, 1, " ")
-    center(1, "ПОПОЛНЕНИЕ БАЛАНСА", 0xFFFFFF)
-    
-    -- Информация о игроке
-    if currentPlayer then
-        gpu.setForeground(0x00FF00)
-        gpu.set(2, 1, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
-    else
-        gpu.setForeground(0xFF0000)
-        gpu.set(2, 1, "Игрок не обнаружен")
+gpu.setBackground(defBG)
+gpu.fill(1, 1, w, h, " ")
+
+-- Шапка
+gpu.setBackground(0x000000)
+gpu.fill(1, 1, w, 1, " ")
+center(1, "ПОПОЛНЕНИЕ БАЛАНСА", 0xFFFFFF)
+
+-- Информация о игроке
+if currentPlayer then
+    gpu.setForeground(0x00FF00)
+    gpu.set(2, 1, "Игрок: " .. currentPlayer)
+    gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+else
+    gpu.setForeground(0xFF0000)
+    gpu.set(2, 1, "Игрок не обнаружен")
+end
+
+gpu.setBackground(defBG)
+
+gpu.setForeground(0xFFFF00)
+center(3, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+
+-- Инструкция
+gpu.setForeground(0xAAAAAA)
+center(5, "Выберите предмет для пополнения баланса", 0xAAAAAA)
+
+-- Получаем инвентарь игрока
+local playerInventory = getPlayerInventory()
+depositItemsList = {}
+
+-- Фильтруем только те предметы, которые можно сдать
+for key, item in pairs(playerInventory) do
+    if item.price > 0 and item.amount > 0 then
+        table.insert(depositItemsList, item)
     end
-    
-    gpu.setBackground(defBG)
-    
+end
+
+-- Сортировка по названию
+table.sort(depositItemsList, function(a, b) 
+    return (a.label or "ZZZ") < (b.label or "ZZZ")
+end)
+
+-- Отображаем инвентарь
+local startY = 7
+if #depositItemsList == 0 then
     gpu.setForeground(0xFFFF00)
-    center(3, "Доступно: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
-    
-    -- Инструкция
-    gpu.setForeground(0xAAAAAA)
-    center(5, "Выберите предмет для пополнения баланса", 0xAAAAAA)
-    
-    -- Получаем инвентарь игрока
-    local playerInventory = getPlayerInventory()
-    depositItemsList = {}
-    
-    -- Фильтруем только те предметы, которые можно сдать
-    for key, item in pairs(playerInventory) do
-        if item.price > 0 and item.amount > 0 then
-            table.insert(depositItemsList, item)
-        end
-    end
-    
-    -- Сортировка по названию
-    table.sort(depositItemsList, function(a, b) 
-        return (a.label or "ZZZ") < (b.label or "ZZZ")
-    end
-    
-    -- Отображаем инвентарь
-    local startY = 7
-    if #depositItemsList == 0 then
-        gpu.setForeground(0xFFFF00)
-        center(math.floor(h/2), "В инвентаре нет предметов для пополнения", 0xFFFF00)
-    else
-        startY = drawPlayerInventory(startY, depositItemsList)
-    end
-    
-    -- Кнопка возврата
-    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+    center(math.floor(h/2), "В инвентаре нет предметов для пополнения", 0xFFFF00)
+else
+    startY = drawPlayerInventory(startY, depositItemsList)
+end
+
+-- Кнопка возврата
+drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
 -- Отрисовка экрана выбора количества для пополнения
 local function drawDepositItemScreen()
-    if not selectedDepositItem then
-        state = "DEPOSIT"
-        drawDepositScreen()
-        return
-    end
-    
-    gpu.setBackground(defBG)
-    gpu.fill(1, 1, w, h, " ")
-    
-    -- Шапка
-    gpu.setBackground(0x000000)
-    gpu.fill(1, 1, w, 1, " ")
-    center(1, "ВЫБОР КОЛИЧЕСТВА ДЛЯ ПОПОЛНЕНИЯ", 0xFFFFFF)
-    
-    -- Информация о игроке
-    if currentPlayer then
-        gpu.setForeground(0x00FF00)
-        gpu.set(2, 1, "Игрок: " .. currentPlayer)
-        gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
-    end
-    
-    gpu.setBackground(defBG)
-    
-    -- Информация о выбранном предмете
-    gpu.setForeground(0xFFFF00)
-    center(3, "Вы выбрали: " .. (selectedDepositItem.label or "Неизвестный предмет"), 0xFFFF00)
-    
-    -- Детали предмета
+if not selectedDepositItem then
+    state = "DEPOSIT"
+    drawDepositScreen()
+    return
+end
+
+gpu.setBackground(defBG)
+gpu.fill(1, 1, w, h, " ")
+
+-- Шапка
+gpu.setBackground(0x000000)
+gpu.fill(1, 1, w, 1, " ")
+center(1, "ВЫБОР КОЛИЧЕСТВА ДЛЯ ПОПОЛНЕНИЯ", 0xFFFFFF)
+
+-- Информация о игроке
+if currentPlayer then
     gpu.setForeground(0x00FF00)
-    gpu.set(5, 5, "В инвентаре: " .. formatNumberWithSpaces(selectedDepositItem.amount))
-    gpu.set(40, 5, "Цена за шт.: " .. string.format("%.3f", selectedDepositItem.price):gsub("%.", ",") .. " " .. CURRENCY_NAME)
-    gpu.set(5, 6, "Баланс: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
-    
-    -- Ввод количества
-    gpu.setForeground(0xFFFFFF)
-    gpu.set(5, 8, "Введите количество:")
-    
-    -- Поле ввода количества
-    gpu.setBackground(lightGrayBG)
-    gpu.fill(5, 9, 20, 1, " ")
-    gpu.set(6, 9, depositQuantityInput)
-    
-    -- Клавиатура калькулятора
-    local keys = {
-        {"7", "8", "9"},
-        {"4", "5", "6"},
-        {"1", "2", "3"},
-        {"0", "С", "←"}
-    }
-    
-    local startX = 5
-    local startY = 11
-    local btnWidth = 5
-    local btnHeight = 2
-    local spacing = 1
-    
-    -- Рисуем клавиатуру
-    for row = 1, 4 do
-        for col = 1, 3 do
-            local key = keys[row][col]
-            if key then
-                drawButton(
-                    startX + (col-1)*(btnWidth + spacing), 
-                    startY + (row-1)*(btnHeight + spacing), 
-                    btnWidth, 
-                    btnHeight, 
-                    key, 
-                    buttonBG
-                )
-            end
+    gpu.set(2, 1, "Игрок: " .. currentPlayer)
+    gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
+end
+
+gpu.setBackground(defBG)
+
+-- Информация о выбранном предмете
+gpu.setForeground(0xFFFF00)
+center(3, "Вы выбрали: " .. (selectedDepositItem.label or "Неизвестный предмет"), 0xFFFF00)
+
+-- Детали предмета
+gpu.setForeground(0x00FF00)
+gpu.set(5, 5, "В инвентаре: " .. formatNumberWithSpaces(selectedDepositItem.amount))
+gpu.set(40, 5, "Цена за шт.: " .. string.format("%.3f", selectedDepositItem.price):gsub("%.", ",") .. " " .. CURRENCY_NAME)
+gpu.set(5, 6, "Баланс: " .. formatNumber(playerBalance) .. " " .. CURRENCY_NAME)
+
+-- Ввод количества
+gpu.setForeground(0xFFFFFF)
+gpu.set(5, 8, "Введите количество:")
+
+-- Поле ввода количества
+gpu.setBackground(lightGrayBG)
+gpu.fill(5, 9, 20, 1, " ")
+gpu.set(6, 9, depositQuantityInput)
+
+-- Клавиатура калькулятора
+local keys = {
+    {"7", "8", "9"},
+    {"4", "5", "6"},
+    {"1", "2", "3"},
+    {"0", "С", "←"}
+}
+
+local startX = 5
+local startY = 11
+local btnWidth = 5
+local btnHeight = 2
+local spacing = 1
+
+-- Рисуем клавиатуру
+for row = 1, 4 do
+    for col = 1, 3 do
+        local key = keys[row][col]
+        if key then
+            drawButton(
+                startX + (col-1)*(btnWidth + spacing), 
+                startY + (row-1)*(btnHeight + spacing), 
+                btnWidth, 
+                btnHeight, 
+                key, 
+                buttonBG
+            )
         end
     end
-    
-    -- Итоговая информация
-    local quantity = tonumber(depositQuantityInput) or 0
-    local totalEarned = quantity * selectedDepositItem.price
-    
-    gpu.setForeground(0x00FF00)
-    gpu.set(40, 8, "Количество: " .. quantity)
-    gpu.set(40, 9, "Будет начислено: " .. string.format("%.3f", totalEarned):gsub("%.", ",") .. " " .. CURRENCY_NAME)
-    gpu.set(40, 10, "Итоговый баланс: " .. formatNumber(playerBalance + totalEarned) .. " " .. CURRENCY_NAME)
-    
-    -- Кнопки действий
-    drawButton(5, 20, 15, 3, "Пополнить", 0x00AA00, 0xFFFFFF)
-    drawButton(25, 20, 15, 3, "Отмена", 0xAA0000, 0xFFFFFF)
-    
-    -- Кнопка возврата
-    drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
+end
+
+-- Итоговая информация
+local quantity = tonumber(depositQuantityInput) or 0
+local totalEarned = quantity * selectedDepositItem.price
+
+gpu.setForeground(0x00FF00)
+gpu.set(40, 8, "Количество: " .. quantity)
+gpu.set(40, 9, "Будет начислено: " .. string.format("%.3f", totalEarned):gsub("%.", ",") .. " " .. CURRENCY_NAME)
+gpu.set(40, 10, "Итоговый баланс: " .. formatNumber(playerBalance + totalEarned) .. " " .. CURRENCY_NAME)
+
+-- Кнопки действий
+drawButton(5, 20, 15, 3, "Пополнить", 0x00AA00, 0xFFFFFF)
+drawButton(25, 20, 15, 3, "Отмена", 0xAA0000, 0xFFFFFF)
+
+-- Кнопка возврата
+drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
 -- Логика магазина
 local function buyItem(itemKey, quantity)
-    if not currentPlayer then
-        center(h - 1, "Игрок не обнаружен!", 0xFF0000)
-        return false
-    end
-    
-    local item = availableItems[itemKey]
-    if not item then
-        center(h - 1, "Предмет не найден!", 0xFF0000)
-        return false
-    end
-    
-    quantity = tonumber(quantity) or 1
+if not currentPlayer then
+    center(h - 1, "Игрок не обнаружен!", 0xFF0000)
+    return false
+end
+
+local item = availableItems[itemKey]
+if not item then
+    center(h - 1, "Предмет не найден!", 0xFF0000)
+    return false
+end
+
+quantity = tonumber(quantity) or 1
     if quantity <= 0 then
         center(h - 1, "Некорректное количество!", 0xFF0000)
         computer.beep(1000, 0.5)
