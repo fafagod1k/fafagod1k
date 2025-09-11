@@ -595,24 +595,23 @@ local function checkDepositItems()
     if not currentPlayer then return {} end
     
     local depositItems = {}
-    local success, inventory = pcall(pim.getAllStacks, 0)
     
-    if success then
-        for slot, item in pairs(inventory) do
-            if item then
-                local info = getItemInfo(item)
-                local itemPrice = DEPOSIT_PRICES[info.name]
-                
-                if itemPrice then
-                    if not depositItems[info.name] then
-                        depositItems[info.name] = {
-                            label = info.label,
-                            price = itemPrice,
-                            count = 0
-                        }
-                    end
-                    depositItems[info.name].count = depositItems[info.name].count + item.qty
+    -- Проверяем каждый слот инвентаря
+    for slot = 1, 27 do  -- Обычно у игрока 27 слотов инвентаря
+        local success, item = pcall(pim.getStackInSlot, 0, slot)
+        if success and item then
+            local info = getItemInfo(item)
+            local itemPrice = DEPOSIT_PRICES[info.name]
+            
+            if itemPrice then
+                if not depositItems[info.name] then
+                    depositItems[info.name] = {
+                        label = info.label,
+                        price = itemPrice,
+                        count = 0
+                    }
                 end
+                depositItems[info.name].count = depositItems[info.name].count + item.size
             end
         end
     end
@@ -823,38 +822,32 @@ local function depositItems()
         return false
     end
     
-    -- Проверяем, что игрок действительно стоит на PIM
-    -- Вместо проверки имени инвентаря, проверяем, что мы можем получить доступ к инвентарю
-    local success, inventory = pcall(pim.getAllStacks, 0)
-    if not success then
-        center(h - 1, "Ошибка доступа к инвентарю!", 0xFF0000)
-        return false
-    end
-    
     local totalEarned = 0
     local itemsProcessed = 0
     
-    for slot, item in pairs(inventory) do
-        if item then
+    -- Проверяем каждый слот инвентаря
+    for slot = 1, 27 do  -- Обычно у игрока 27 слотов инвентаря
+        local success, item = pcall(pim.getStackInSlot, 0, slot)
+        if success and item then
             local info = getItemInfo(item)
             local itemPrice = DEPOSIT_PRICES[info.name]
             
             if itemPrice then
-                local amountToProcess = item.qty
+                local amountToProcess = item.size
                 local earned = amountToProcess * itemPrice
                 
                 -- Изъятие предметов у игрока
                 local pushSuccess = pim.pushItem("DOWN", slot, amountToProcess)
-                if not pushSuccess then
-                    center(h - 1, "Ошибка изъятия предметов!", 0xFF0000)
+                if pushSuccess then
+                    -- Начисление средств
+                    playerBalance = playerBalance + earned
+                    totalEarned = totalEarned + earned
+                    itemsProcessed = itemsProcessed + amountToProcess
+                else
+                    center(h - 1, "Ошибка изъятия предметов из слота " .. slot, 0xFF0000)
                     computer.beep(1000, 0.5)
                     return false
                 end
-                
-                -- Начисление средств
-                playerBalance = playerBalance + earned
-                totalEarned = totalEarned + earned
-                itemsProcessed = itemsProcessed + amountToProcess
             end
         end
     end
