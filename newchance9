@@ -784,7 +784,7 @@ local function depositItems()
     end
     
     -- Получаем инвентарь игрока через PIM
-    local inv = pim.getPlayerInventory()
+    local inv = pim.getInventory()
     if not inv then
         center(h - 1, "Инвентарь игрока недоступен!", 0xFF0000)
         return false
@@ -805,7 +805,7 @@ local function depositItems()
                 local earned = amountToProcess * itemPrice
                 
                 -- Изъятие предметов у игрока (перемещение вниз)
-                local pushed = pim.pushItemIntoSlot("DOWN", slot, amountToProcess)
+                local pushed = pim.pushItem("DOWN", slot, amountToProcess)
                 if pushed > 0 then
                     -- Начисление средств
                     playerBalance = playerBalance + earned
@@ -1205,8 +1205,8 @@ local function main()
         
         -- Проверка присутствия игрока
         if currentPlayer and state ~= "GOODBYE" then
-            local invName = pim.getInventoryName()
-            if invName ~= currentPlayer then
+            local inv = pim.getInventory()
+            if not inv then
                 state = "GOODBYE"
                 goodbyeTimer = computer.uptime()
                 drawGoodbyeScreen()
