@@ -641,7 +641,7 @@ local function drawDepositScreen()
         return (a.label or "ZZZ") < (b.label or "ZZZ")
     end)
     
-    -- Заголовки таблица
+    -- Заголовки таблицы
     gpu.setForeground(0x00FF00)
     gpu.set(3, 14, "Наименование")
     gpu.set(60, 14, "Цена за шт.")
@@ -688,7 +688,7 @@ local function drawAdminPanel()
     -- Шапка
     gpu.setBackground(0x000000)
     gpu.fill(1, 1, w, 1, " ")
-    center(1, "АДМИНИСТРАТИВНАЯ ПАНЕЛЬ", 0xFFFFFF)
+    center(1, "АДМИНИСТРАТИВНАя ПАНЕЛЬ", 0xFFFFFF)
     
     -- Информация о игроке
     if currentPlayer then
@@ -783,8 +783,8 @@ local function depositItems()
         return false
     end
     
-    -- Получаем инвентарь игрока
-    local inv = pim.getInventory()
+    -- Получаем инвентарь игрока через PIM
+    local inv = pim.getPlayerInventory()
     if not inv then
         center(h - 1, "Инвентарь игрока недоступен!", 0xFF0000)
         return false
@@ -805,7 +805,7 @@ local function depositItems()
                 local earned = amountToProcess * itemPrice
                 
                 -- Изъятие предметов у игрока (перемещение вниз)
-                local pushed = pim.pushItem("DOWN", slot, amountToProcess)
+                local pushed = pim.pushItemIntoSlot("DOWN", slot, amountToProcess)
                 if pushed > 0 then
                     -- Начисление средств
                     playerBalance = playerBalance + earned
