@@ -22,6 +22,7 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
+local ITEMS_FILE = "items.txt"
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
 
 -- Цены для пополнения баланса
@@ -75,7 +76,51 @@ local function saveBalances(balances)
     file:close()
 end
 
--- Получение информации о предмете (упрощенная версия без переводов)
+-- Загрузка предметов из файла
+local function loadItemsFromFile()
+    local items = {}
+    if not fs.exists(ITEMS_FILE) then
+        return items
+    end
+    
+    local file = io.open(ITEMS_FILE, "r")
+    for line in file:lines() do
+        line = line:trim()
+        if line ~= "" and not line:startswith("#") then
+            local parts = {}
+            for part in line:gmatch("[^;]+") do
+                table.insert(parts, part:trim())
+            end
+            
+            if #parts >= 4 then
+                local name_damage = parts[1]
+                local label = parts[2]
+                local maxSize = tonumber(parts[3]) or 64
+                local price = tonumber(parts[4]) or DEFAULT_BUY_PRICE
+                
+                -- Разбираем имя и damage
+                local name, damageStr = name_damage:match("^([^@]+)@?(%d*)$")
+                if name then
+                    local damage = tonumber(damageStr) or 0
+                    local key = name .. (damage > 0 and (":" .. damage) or "")
+                    
+                    items[key] = {
+                        label = label,
+                        name = name,
+                        damage = damage,
+                        maxSize = maxSize,
+                        price = price,
+                        amount = 0
+                    }
+                end
+            end
+        end
+    end
+    file:close()
+    return items
+end
+
+-- Получение информации о предмете
 local function getItemInfo(item)
     if not item or not item.name then 
         return {label = "Неизвестный предмет", name = "unknown", damage = 0, key = "unknown"}
@@ -101,19 +146,15 @@ end
 
 -- Сканирование ME системы для получения доступных предметов
 local function getAvailableItems()
-    local availableItems = {}
+    local availableItems = loadItemsFromFile()
     local itemsInME = me.getItemsInNetwork()
     
     for _, item in ipairs(itemsInME) do
         if item and item.name then
             local info = getItemInfo(item)
-            availableItems[info.key] = {
-                label = info.label,
-                name = info.name,
-                damage = info.damage,
-                price = DEFAULT_BUY_PRICE,
-                amount = item.size
-            }
+            if availableItems[info.key] then
+                availableItems[info.key].amount = (availableItems[info.key].amount or 0) + (item.size or 0)
+            end
         end
     end
     
