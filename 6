@@ -567,8 +567,8 @@ local function getPlayerInventory()
     
     if not currentPlayer then return inventory end
     
-    -- Проверяем каждый слот инвентаря игрока
-    for slot = 1, 27 do
+    -- Проверяем каждый слот инвентаря игрока (включая горячую панель)
+    for slot = 1, 36 do
         local item = pim.getStackInSlot(0, slot)
         if item and item.name then
             local info = getItemInfo(item)
@@ -864,8 +864,8 @@ local function depositItems(itemName, damage, quantity)
     local itemsProcessed = 0
     local remainingQuantity = quantity
     
-    -- Проверяем каждый слот инвентаря игрока
-    for slot = 1, 27 do
+    -- Проверяем каждый слот инвентаря игрока (включая горячую панель)
+    for slot = 1, 36 do
         if remainingQuantity <= 0 then break end
         
         local item = pim.getStackInSlot(0, slot)
@@ -1150,7 +1150,7 @@ local function handleEvent(eventName, ...)
                 end
             end
             
-            -- Кнопка отмены
+            -- Кнопка отмена
             if y >= 20 and y <= 22 and x >= 25 and x <= 39 then
                 state = "DEPOSIT"
                 drawDepositScreen()
