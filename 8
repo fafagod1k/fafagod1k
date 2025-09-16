@@ -13,7 +13,6 @@ end
 local inspect = require("inspect")
 
 -- Компоненты
-local me = com.isAvailable("me_interface") and com.me_interface or error("ME интерфейс не подключен")
 local pim = com.isAvailable("pim") and com.pim or error("PIM не подключен")
 local gpu = com.gpu
 local w, h = 80, 25
@@ -22,14 +21,57 @@ gpu.setResolution(w, h)
 -- Константы
 local CURRENCY_NAME = "Эмы"
 local BALANCES_PATH = "balances.cfg"
-local ITEMS_FILE = "items.txt"
 local DEFAULT_BUY_PRICE = 10 -- Цена покупки по умолчанию
+
+-- Статический каталог товаров
+local STATIC_ITEMS = {
+    ["minecraft:diamond"] = {
+        label = "Алмаз",
+        id = "minecraft:diamond",
+        damage = 0,
+        price = 100,
+        amount = 1000
+    },
+    ["minecraft:iron_ingot"] = {
+        label = "Железный слиток",
+        id = "minecraft:iron_ingot",
+        damage = 0,
+        price = 10,
+        amount = 5000
+    },
+    ["minecraft:gold_ingot"] = {
+        label = "Золотой слиток",
+        id = "minecraft:gold_ingot",
+        damage = 0,
+        price = 20,
+        amount = 3000
+    },
+    ["minecraft:emerald"] = {
+        label = "Изумруд",
+        id = "minecraft:emerald",
+        damage = 0,
+        price = 50,
+        amount = 2000
+    },
+    ["minecraft:redstone"] = {
+        label = "Красная пыль",
+        id = "minecraft:redstone",
+        damage = 0,
+        price = 5,
+        amount = 8000
+    }
+}
 
 -- Цены для пополнения баланса
 local DEPOSIT_PRICES = {
     ["minecraft:iron_block"] = 0.9,      -- Железный блок
     ["minecraft:iron_ingot"] = 0.1,      -- Железный слиток
-    -- Добавьте другие предметы по необходимости
+    ["minecraft:gold_block"] = 0.9,      -- Золотой блок
+    ["minecraft:gold_ingot"] = 0.1,      -- Золотой слиток
+    ["minecraft:diamond_block"] = 9.0,   -- Алмазный блок
+    ["minecraft:diamond"] = 1.0,         -- Алмаз
+    ["minecraft:emerald_block"] = 4.5,   -- Блок изумруда
+    ["minecraft:emerald"] = 0.5,         -- Изумруд
 }
 
 -- Цвета
@@ -76,89 +118,33 @@ local function saveBalances(balances)
     file:close()
 end
 
--- Загрузка предметов из файла
-local function loadItemsFromFile()
-    local items = {}
-    if not fs.exists(ITEMS_FILE) then
-        return items
-    end
-    
-    local file = io.open(ITEMS_FILE, "r")
-    for line in file:lines() do
-        line = line:trim()
-        if line ~= "" and not line:startswith("#") then
-            local parts = {}
-            for part in line:gmatch("[^;]+") do
-                table.insert(parts, part:trim())
-            end
-            
-            if #parts >= 4 then
-                local name_damage = parts[1]
-                local label = parts[2]
-                local maxSize = tonumber(parts[3]) or 64
-                local price = tonumber(parts[4]) or DEFAULT_BUY_PRICE
-                
-                -- Разбираем имя и damage
-                local name, damageStr = name_damage:match("^([^@]+)@?(%d*)$")
-                if name then
-                    local damage = tonumber(damageStr) or 0
-                    local key = name .. (damage > 0 and (":" .. damage) or "")
-                    
-                    items[key] = {
-                        label = label,
-                        name = name,
-                        damage = damage,
-                        maxSize = maxSize,
-                        price = price,
-                        amount = 0
-                    }
-                end
-            end
-        end
-    end
-    file:close()
-    return items
-end
-
--- Получение информации о предмете
+-- Получение информации о предмете (упрощенная версия без переводов)
 local function getItemInfo(item)
-    if not item or not item.name then 
-        return {label = "Неизвестный предмет", name = "unknown", damage = 0, key = "unknown"}
+    if not item or not item.id then 
+        return {label = "Неизвестный предмет", id = "unknown", damage = 0, key = "unknown"}
     end
     
-    -- Извлекаем базовое имя без damage
-    local baseName = item.name:match("^([^@]+)") or item.name
+    -- Извлекаем базовый id без damage
+    local baseId = item.id:match("^([^@]+)") or item.id
     local dmg = item.damage or item.dmg or 0
     
     -- Формируем полный ключ
-    local key = baseName .. (dmg > 0 and (":" .. dmg) or "")
+    local key = baseId .. (dmg > 0 and (":" .. dmg) or "")
     
-    -- Используем label из предмета, если он есть, иначе используем имя
-    local label = item.label or baseName
+    -- Используем label из предмета, если он есть, иначе используем id
+    local label = item.label or baseId
     
     return {
         label = label,
-        name = baseName,
+        id = baseId,
         damage = dmg,
         key = key
     }
 end
 
--- Сканирование ME системы для получения доступных предметов
+-- Получение доступных предметов из статического каталога
 local function getAvailableItems()
-    local availableItems = loadItemsFromFile()
-    local itemsInME = me.getItemsInNetwork()
-    
-    for _, item in ipairs(itemsInME) do
-        if item and item.name then
-            local info = getItemInfo(item)
-            if availableItems[info.key] then
-                availableItems[info.key].amount = (availableItems[info.key].amount or 0) + (item.size or 0)
-            end
-        end
-    end
-    
-    return availableItems
+    return STATIC_ITEMS
 end
 
 -- Глобальные настройки GPU
@@ -458,7 +444,7 @@ local function drawBuyScreen()
             -- Фильтрация по поиску по всей строке
             if searchText == "" or 
                (item.label and item.label:lower():find(searchText:lower(), 1, true)) or
-               (item.name and item.name:lower():find(searchText:lower(), 1, true)) then
+               (item.id and item.id:lower():find(searchText:lower(), 1, true)) then
                 table.insert(shopItems, {key = key, item = item})
             end
         end
@@ -528,7 +514,7 @@ local function drawBuyItemScreen()
     
     -- Информация о игроке
     if currentPlayer then
-        gpu.setForeground(0x00FF00)
+        gpu.setForeground(00FF00)
         gpu.set(2, 1, "Игрок: " .. currentPlayer)
         gpu.set(w - unicode.len("Баланс: " .. formatNumber(playerBalance)) - 1, 1, "Баланс: " .. formatNumber(playerBalance))
     end
@@ -602,26 +588,29 @@ local function drawBuyItemScreen()
     drawButton(w - 10, h, 10, 1, "Назад", 0xFF4500)
 end
 
--- Функция для проверки инвентаря игрока
+-- Функция для проверки инвентаря игрока с использованием getallstacks
 local function getPlayerInventory()
     local inventory = {}
     
     if not currentPlayer then return inventory end
     
-    -- Проверяем каждый слот инвентаря игрока (включая горячую панель)
-    for slot = 1, 36 do
-        local item = pim.getStackInSlot(0, slot)
-        if item and item.name then
+    -- Получаем все стеки из инвентаря игрока
+    local allStacks = pim.getallstacks(0)
+    if not allStacks then return inventory end
+    
+    -- Обрабатываем каждый слот
+    for slot, item in pairs(allStacks) do
+        if item and item.id then
             local info = getItemInfo(item)
             local key = info.key
             
             if not inventory[key] then
                 inventory[key] = {
-                    name = info.name,
+                    id = info.id,
                     damage = info.damage,
                     label = info.label,
                     amount = 0,
-                    price = DEPOSIT_PRICES[info.name] or 0
+                    price = DEPOSIT_PRICES[info.id] or 0
                 }
             end
             
@@ -860,14 +849,14 @@ quantity = tonumber(quantity) or 1
         return false
     end
     
-    -- Выдача предмета
-    local success = me.exportItem({name = item.name, damage = item.damage}, "UP", quantity)
-    if success and success.size > 0 then
+    -- Выдача предмета через PIM
+    local success = pim.pushItem(0, nil, quantity, {id = item.id, damage = item.damage})
+    if success and success > 0 then
         playerBalance = playerBalance - totalPrice
         balances[currentPlayer] = playerBalance
         saveBalances(balances)
         
-        -- Обновляем количество
+        -- Обновляем количество в статическом каталоге
         item.amount = item.amount - quantity
         
         center(h - 1, "Покупка успешна: " .. quantity .. "x " .. (item.label or "предмет"), 0x00FF00)
@@ -881,7 +870,7 @@ quantity = tonumber(quantity) or 1
 end
 
 -- Функция для пополнения баланса с выбором количества
-local function depositItems(itemName, damage, quantity)
+local function depositItems(itemId, damage, quantity)
     if not currentPlayer then
         center(h - 1, "Игрок не обнаружен!", 0xFF0000)
         return false
@@ -894,7 +883,7 @@ local function depositItems(itemName, damage, quantity)
         return false
     end
     
-    local itemPrice = DEPOSIT_PRICES[itemName]
+    local itemPrice = DEPOSIT_PRICES[itemId]
     if not itemPrice then
         center(h - 1, "Этот предмет нельзя сдать!", 0xFF0000)
         computer.beep(1000, 0.5)
@@ -905,12 +894,18 @@ local function depositItems(itemName, damage, quantity)
     local itemsProcessed = 0
     local remainingQuantity = quantity
     
-    -- Проверяем каждый слот инвентаря игрока (включая горячую панель)
-    for slot = 1, 36 do
+    -- Проверяем каждый слот инвентаря игрока с использованием getallstacks
+    local allStacks = pim.getallstacks(0)
+    if not allStacks then
+        center(h - 1, "Ошибка доступа к инвентарю!", 0xFF0000)
+        computer.beep(1000, 0.5)
+        return false
+    end
+    
+    for slot, item in pairs(allStacks) do
         if remainingQuantity <= 0 then break end
         
-        local item = pim.getStackInSlot(0, slot)
-        if item and item.name == itemName and (item.damage or 0) == damage then
+        if item and item.id == itemId and (item.damage or 0) == damage then
             local amountToProcess = math.min(item.size or 0, remainingQuantity)
             
             if amountToProcess > 0 then
@@ -962,9 +957,8 @@ local function handleEvent(eventName, ...)
         playerBalance = balances[currentPlayer] or 0
         state = "MAIN"
         
-        -- Обновляем информацию о доступных предметах при заходе игрока
+        -- Используем статический список предметов
         availableItems = getAvailableItems()
-        lastScanTime = os.time()
         
         drawMainScreen()
     elseif eventName == "player_off" then
@@ -1100,7 +1094,7 @@ local function handleEvent(eventName, ...)
                 end
             end
             
-            -- Кнопка отмены
+            -- Кнопка отменя
             if y >= 20 and y <= 22 and x >= 25 and x <= 39 then
                 state = "BUY"
                 drawBuyScreen()
@@ -1184,14 +1178,14 @@ local function handleEvent(eventName, ...)
             if y >= 20 and y <= 22 and x >= 5 and x <= 19 then
                 local quantity = tonumber(depositQuantityInput) or 0
                 if quantity > 0 then
-                    if depositItems(selectedDepositItem.name, selectedDepositItem.damage, quantity) then
+                    if depositItems(selectedDepositItem.id, selectedDepositItem.damage, quantity) then
                         state = "DEPOSIT"
                         drawDepositScreen()
                     end
                 end
             end
             
-            -- Кнопка отмена
+            -- Кнопка отмены
             if y >= 20 and y <= 22 and x >= 25 and x <= 39 then
                 state = "DEPOSIT"
                 drawDepositScreen()
@@ -1337,7 +1331,7 @@ local function handleEvent(eventName, ...)
             elseif char == 13 then -- Enter
                 local quantity = tonumber(depositQuantityInput) or 0
                 if quantity > 0 then
-                    if depositItems(selectedDepositItem.name, selectedDepositItem.damage, quantity) then
+                    if depositItems(selectedDepositItem.id, selectedDepositItem.damage, quantity) then
                         state = "DEPOSIT"
                         drawDepositScreen()
                     end
@@ -1371,7 +1365,6 @@ local function main()
     -- Загрузка данных
     balances = loadBalances()
     availableItems = getAvailableItems()
-    lastScanTime = os.time()
     
     -- Основные переменные
     currentPlayer = nil
